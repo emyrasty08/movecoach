@@ -159,3 +159,30 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .home-score { background: var(--surface); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px; }
 .home-score b { font-size: 1.4rem; }
 .manual { background: var(--surface); border-radius: var(--radius); padding: 4px 14px 8px; margin: 6px 0; }
+
+/* ---------------------------------------------------------------- training session, picker, history */
+button.ex-item { width: 100%; border: 0; text-align: left; color: var(--text); font: inherit; }
+.ex-item .go { color: var(--muted); font-size: 1.6rem; line-height: 1; }
+.ex-list h2.group { margin: 14px 0 0; color: var(--text-2); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.tips ul { margin: 0; padding-left: 1.2em; }
+.tips li { margin: 6px 0; }
+.source { margin: 10px 0 0; }
+.side-pick { margin-top: 18px; }
+.side-pick .btn.primary { border-color: transparent; }
+.session-card { background: var(--surface); border-radius: var(--radius); padding: 12px 14px; margin: 10px 0; }
+.session-card .head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline;
+  margin-bottom: 4px; }
+.session-card .meta, .set-row .meta { color: var(--text-2); font-size: 0.85rem; }
+.set-row { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--grid); }
+.set-row .pct { font-size: 1.15rem; font-weight: 800; min-width: 52px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 4px; }
+.chip { border: 1px solid var(--grid); background: var(--surface); border-radius: 999px; padding: 6px 12px;
+  font-size: 0.9rem; color: var(--text-2); }
+.chip.on { background: var(--accent); color: #062026; border-color: transparent; font-weight: 700; }
+#histStats { margin-top: 10px; }
+#histStats:empty { display: none; }
+.hist-list h2 { margin: 18px 0 2px; }
+.hist-item .pct small { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.hist-list .empty { color: var(--muted); padding: 16px 0; }
+#sCharts .chart svg { height: 170px; }
+.verdict { margin: 8px 0 0; padding-left: 1.1em; color: var(--text-2); font-size: 0.9rem; }

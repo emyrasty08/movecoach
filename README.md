@@ -1,5 +1,24 @@
 # Movement Coach – web app per telefono
 
+**Novità 17/11/2026 (sera): l'app non è più centrata sullo squat.**
+- Home: **Inizia allenamento**, piano di lavoro, **Storico**, valutazione iniziale (resta al primo avvio).
+- Un **allenamento** raccoglie più serie di esercizi diversi: "+ Aggiungi esercizio" → scegli
+  (squat o uno dei 7 esercizi FMS) → schermata con le **linee guida ufficiali** (fonte citata:
+  criteri FMS di Cook et al. 2014; NSCA per lo squat, regola IPF per la profondità), dove mettere
+  il telefono e il lato → serie con la fotocamera o da un video → riepilogo → altra serie o altro
+  esercizio → "Termina allenamento". L'allenamento aperto è salvato dopo ogni serie.
+- **Storico** per allenamento (ogni scheda elenca gli esercizi fatti) + grafico della % di
+  ripetizioni corrette per serie, un esercizio alla volta (filtro a chip), e le valutazioni.
+  Il vecchio storico dello squat viene convertito automaticamente.
+- **Grafici del riepilogo** (ispirati ai demo di Jeremy Park, github.com/jeremyipark/vision-demos):
+  andamento del movimento nella serie con le ripetizioni evidenziate (verde corretta, rosso da
+  correggere) e tempo di risalita per ripetizione con più veloce / più lenta / % in più.
+- **Squat di lato: profondità IPF** (anca sotto la parte alta del ginocchio) con lo scarto
+  giunto/anatomia di +0,055 femori tarato da Ivan Necerini su 11 ripetizioni annotate
+  (github.com/IvanNece/Streetlifting-RefereeAI, docs/05): nel riepilogo "sotto il parallelo: x su n".
+- File nuovi: `js/catalog.js` (esercizi e linee guida), `js/session.js` (allenamenti),
+  `js/charts.js` (grafici); `js/history.js` riscritto. Test: `node test/browser_session.mjs <video> <prefisso>`.
+
 **Novità 17/11/2026** (dettagli passo per passo in `../piano-progetto.html`, sezione 13):
 - al primo avvio, **valutazione** con i 7 test FMS registrati col Kinect (voto 0–3 per test, totale su 21);
 - **piano di lavoro** di 4 settimane sulle aree più deboli (`js/plan.js`);

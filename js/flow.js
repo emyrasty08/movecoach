@@ -1,5 +1,5 @@
-// Screens and flow of the initial assessment, the results, the training plan and
-// the exercise list. The camera session itself lives in main.js, which passes its
+// Screens and flow of the initial assessment, the results, the training plan,
+// the training session (exercise picker, guidelines, sets done so far). The camera session itself lives in main.js, which passes its
 // functions here through initFlow().
 //
 // Assessment: the 7 tests in FMS order, bilateral tests once per side. For each
@@ -8,10 +8,13 @@
 
 import { EXERCISES, ASSESSMENT_ORDER } from "./exercises.js";
 import { buildPlan, totalScore, saveAssessment, lastAssessment } from "./plan.js";
+import { CATALOG, GUIDES, byId, setupSteps } from "./catalog.js";
+import { openSession, startSession, endSession, loadSessions } from "./session.js";
+import { renderHistory, sessionCard } from "./history.js";
 
 const $ = (id) => document.getElementById(id);
 const SIDE_NAME = { l: "sinistra", r: "destra" };
-let api = null;               // { show, startExercise, speak }
+let api = null;               // { show, speak, startExercise, startTrain }
 let A = null;                 // assessment in progress
 
 // ---------------------------------------------------------------- profile
@@ -38,8 +41,27 @@ export function initFlow(mainApi) {
   $("btnTestRedo").onclick = () => runStep();
   $("btnSeePlan").onclick = () => { renderPlan(); api.show("plan"); };
   $("btnPlan").onclick = () => { renderPlan(); api.show("plan"); };
-  $("btnTrain").onclick = () => { renderExerciseList(); api.show("exercises"); };
-  for (const id of ["btnHome3", "btnHome4", "btnHome5"]) $(id).onclick = () => { renderHome(); api.show("home"); };
+  for (const id of ["btnHome3", "btnHome4", "btnSessBack"]) $(id).onclick = () => { renderHome(); api.show("home"); };
+  // training session
+  $("btnSession").onclick = () => { startSession(); showSession(); };
+  $("btnAddEx").onclick = () => { renderExerciseList(); api.show("exercises"); };
+  $("btnHome5").onclick = () => (openSession() ? showSession() : (renderHome(), api.show("home")));
+  $("btnEndSession").onclick = () => {
+    const s = endSession();
+    renderHome();
+    if (!s) { api.show("home"); return; }
+    api.speak("Allenamento salvato");
+    showHistory();
+  };
+  $("btnHistory").onclick = () => showHistory();
+  $("btnExBack").onclick = () => api.show(EI.back);
+  $("btnExGo").onclick = () => api.startTrain(EI.id, EI.side, "camera");
+  $("btnExFile").onclick = () => $("fileInput").click();
+  $("fileInput").onchange = (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (f) api.startTrain(EI.id, EI.side, "file", f);
+  };
+  for (const b of $("eiSide").querySelectorAll("button")) b.onclick = () => pickSide(b.dataset.side);
   renderHome();
 }
 
@@ -49,6 +71,8 @@ function storeWelcome() {
 }
 
 export function renderHome() {
+  const open = openSession();
+  $("btnSession").textContent = open?.sets.length ? `Riprendi allenamento (${open.sets.length} serie)` : "Inizia allenamento";
   const last = lastAssessment();
   $("btnPlan").hidden = !last;
   $("homeScore").hidden = !last;
@@ -202,30 +226,68 @@ function coachButton(id) {
   const b = document.createElement("button");
   b.className = "btn small";
   b.textContent = "Con coach";
-  b.onclick = () => (id === "squat" ? api.startSquat() : askSide(id));
+  b.onclick = () => openExIntro(id, "plan");
   return b;
-}
-
-// bilateral exercise: ask which side (simple confirm, no extra screen)
-function askSide(id) {
-  if (!EXERCISES[id].bilateral) { api.startExercise(id, null, "train"); return; }
-  const right = confirm(`${EXERCISES[id].name}: OK = lato destro, Annulla = lato sinistro`);
-  api.startExercise(id, right ? "r" : "l", "train");
 }
 
 function renderExerciseList() {
   const list = $("exList");
   list.innerHTML = "";
-  const items = [{ id: "squat", name: "Squat (di lato)", meta: "profondità, busto, ginocchia, talloni · con manichino" }]
-    .concat(ASSESSMENT_ORDER.map((id) => ({ id, name: EXERCISES[id].name,
-      meta: `telefono ${{ front: "di fronte", side: "di lato", back: "dietro di te" }[EXERCISES[id].view]} · ${EXERCISES[id].tool}` })));
-  for (const it of items) {
-    const row = document.createElement("div");
+  let group = null;
+  for (const it of CATALOG) {
+    if (it.group !== group) {
+      group = it.group;
+      const h = document.createElement("h2");
+      h.className = "group";
+      h.textContent = group;
+      list.appendChild(h);
+    }
+    const row = document.createElement("button");
     row.className = "ex-item";
-    row.innerHTML = `<div class="info"><div>${it.name}</div><div class="meta">${it.meta}</div></div>`;
-    row.appendChild(coachButton(it.id));
+    row.innerHTML = `<div class="info"><div>${it.name}</div><div class="meta">${it.meta}</div></div><span class="go">›</span>`;
+    row.onclick = () => openExIntro(it.id, "exercises");
     list.appendChild(row);
   }
+}
+
+// ---------------------------------------------------------------- exercise intro
+const EI = { id: null, side: null, back: "exercises" };
+
+export function openExIntro(id, back = EI.back) {
+  const it = byId(id), g = GUIDES[id];
+  EI.id = id; EI.back = back;
+  $("eiTitle").textContent = it.name;
+  $("eiMeta").textContent = `Ti serve: ${it.tool}.`;
+  $("eiGuide").innerHTML = g.points.map((t) => `<li>${t}</li>`).join("");
+  $("eiSource").textContent = `Fonte: ${g.source}.`;
+  $("eiSetup").innerHTML = setupSteps(id).map((t) => `<li>${t}</li>`).join("");
+  $("eiSide").hidden = !it.bilateral;
+  pickSide(it.bilateral ? EI.side || "l" : null);
+  api.show("exIntro");
+}
+
+function pickSide(side) {
+  EI.side = side;
+  for (const b of $("eiSide").querySelectorAll("button")) b.classList.toggle("primary", b.dataset.side === side);
+}
+
+// ---------------------------------------------------------------- session and history screens
+export function showSession() {
+  const s = openSession() || startSession();
+  const d = new Date(s.start);
+  const reps = s.sets.reduce((a, x) => a + x.reps, 0);
+  $("sessSub").textContent = s.sets.length
+    ? `Iniziato alle ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} · ${s.sets.length} serie · ${reps} ripetizioni`
+    : "Scegli il primo esercizio. Dopo ogni serie torni qui e puoi farne un'altra o cambiare esercizio.";
+  $("sessSets").innerHTML = "";
+  if (s.sets.length) $("sessSets").appendChild(sessionCard(s));
+  $("btnEndSession").hidden = !s.sets.length;
+  api.show("session");
+}
+
+export function showHistory() {
+  api.show("history");
+  renderHistory(loadSessions());
 }
 
 // ---------------------------------------------------------------- summary of a training set

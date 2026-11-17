@@ -100,10 +100,53 @@
   <div class="page">
     <div class="row head">
       <button id="btnHome5" class="round" aria-label="Indietro">←</button>
-      <h1>Esercizi</h1>
+      <h1>Scegli l'esercizio</h1>
     </div>
-    <p class="lead">Scegli un esercizio: la fotocamera conta le ripetizioni e la voce ti dice cosa correggere.</p>
+    <p class="lead">La fotocamera conta le ripetizioni e la voce ti dice cosa correggere. Ogni serie finisce nell'allenamento di oggi.</p>
     <div id="exList" class="ex-list"></div>
+  </div>
+</section>
+
+<!-- EXERCISE INTRO: guidelines, phone placement, side -->
+<section id="exIntro" class="screen scroll">
+  <div class="page">
+    <div class="row head">
+      <button id="btnExBack" class="round" aria-label="Indietro">←</button>
+      <h1 id="eiTitle"></h1>
+    </div>
+    <p id="eiMeta" class="small"></p>
+    <div class="tips">
+      <h2>Linee guida</h2>
+      <ul id="eiGuide"></ul>
+      <p id="eiSource" class="small source"></p>
+    </div>
+    <div class="tips">
+      <h2>Dove mettere il telefono</h2>
+      <ol id="eiSetup"></ol>
+    </div>
+    <div id="eiSide" class="side-pick" hidden>
+      <h2>Lato da allenare</h2>
+      <div class="row">
+        <button class="btn" data-side="l">Sinistro</button>
+        <button class="btn" data-side="r">Destro</button>
+      </div>
+    </div>
+    <button id="btnExGo" class="btn primary">Inizia la serie</button>
+    <button id="btnExFile" class="btn">Analizza un video già registrato</button>
+  </div>
+</section>
+
+<!-- TRAINING SESSION -->
+<section id="session" class="screen scroll">
+  <div class="page">
+    <div class="row head">
+      <button id="btnSessBack" class="round" aria-label="Home">←</button>
+      <h1>Allenamento</h1>
+    </div>
+    <p id="sessSub" class="lead"></p>
+    <div id="sessSets"></div>
+    <button id="btnAddEx" class="btn primary">+ Aggiungi esercizio</button>
+    <button id="btnEndSession" class="btn">Termina allenamento</button>
   </div>
 </section>
 
@@ -115,22 +158,18 @@
     <p class="lead">Valuta come ti muovi, segui il tuo piano e allenati con la correzione a voce.</p>
     <div id="homeScore" class="home-score" hidden></div>
 
-    <button id="btnPlan" class="btn primary" hidden>Il mio piano di lavoro</button>
-    <button id="btnTrain" class="btn">Esercizi con correzione</button>
-    <button id="btnStart" class="btn">Squat di lato (con manichino)</button>
+    <button id="btnSession" class="btn primary">Inizia allenamento</button>
+    <button id="btnPlan" class="btn" hidden>Il mio piano di lavoro</button>
+    <button id="btnHistory" class="btn">Storico</button>
     <button id="btnNewAssess" class="btn">Valutazione iniziale</button>
-    <button id="btnFile" class="btn">Analizza un video di squat</button>
-    <button id="btnHistory" class="btn">Storico squat</button>
     <input id="fileInput" type="file" accept="video/*" hidden>
 
     <div class="tips">
-      <h2>Come posizionare il telefono</h2>
+      <h2>Come funziona</h2>
       <ol>
-        <li>Telefono <b>dritto</b>, appoggiato all'altezza del bacino, a <b>2–3 m</b> da te.</li>
-        <li>Devi vederti <b>dalla testa ai piedi</b>.</li>
-        <li><b>Di lato</b>: controllo profondità, busto, ginocchia e talloni.<br>
-            <b>Di fronte</b>: controllo ginocchia verso l'interno e peso spostato.</li>
-        <li>Stai fermo in piedi un secondo: quando senti “Pronto”, parti.</li>
+        <li><b>Valutazione iniziale</b>: 7 test di movimento, un punteggio e un piano di lavoro.</li>
+        <li><b>Allenamento</b>: scegli l'esercizio, fai la serie davanti al telefono, poi il prossimo.</li>
+        <li><b>Storico</b>: ogni allenamento con tutti gli esercizi fatti, e i progressi esercizio per esercizio.</li>
       </ol>
     </div>
     <p id="modelStatus" class="status"></p>
@@ -170,11 +209,24 @@
       <div class="tile"><span id="sPct">0%</span><small>precisione</small></div>
     </div>
     <p id="sMain" class="main-err"></p>
+    <div id="sCharts">
+      <div class="chart-card">
+        <h2>Andamento della serie</h2>
+        <p class="sub">quanto scendi nel tempo; in verde le ripetizioni corrette, in rosso quelle da correggere</p>
+        <div id="sTrace" class="chart"></div>
+      </div>
+      <div class="chart-card">
+        <h2>Tempo di risalita per ripetizione</h2>
+        <p class="sub">pieno = corretta, anello = da correggere; se la risalita rallenta molto è la fatica</p>
+        <div id="sTempo" class="chart"></div>
+        <ul id="sTempoNote" class="verdict"></ul>
+      </div>
+    </div>
     <button id="btnWorst" class="btn primary" hidden>Rivedi la peggiore al rallentatore</button>
     <div id="repList" class="rep-list"></div>
     <div class="row">
-      <button id="btnAgain" class="btn primary">Nuova serie</button>
-      <button id="btnHome1" class="btn">Home</button>
+      <button id="btnAgain" class="btn primary">Altra serie</button>
+      <button id="btnHome1" class="btn">Torna all'allenamento</button>
     </div>
   </div>
 </section>
@@ -205,11 +257,15 @@
       <button id="btnHome2" class="round" aria-label="Indietro">←</button>
       <h1>Storico</h1>
     </div>
+    <div id="histFilter" class="chips"></div>
     <div class="chart-card">
-      <h2>Ripetizioni corrette per sessione</h2>
-      <p class="sub">percentuale sul totale della serie</p>
+      <h2 id="histTitle">Ripetizioni corrette per serie</h2>
+      <p class="sub">percentuale sul totale della serie, ultime 20 serie</p>
       <div id="chart" class="chart"></div>
     </div>
+    <div id="histStats" class="tiles"></div>
+    <p id="histTop" class="main-err"></p>
+    <div id="histAssess" class="hist-list"></div>
     <div id="histList" class="hist-list"></div>
     <button id="btnClear" class="btn danger small">Cancella storico</button>
   </div>

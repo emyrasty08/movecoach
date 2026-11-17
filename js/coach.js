@@ -35,6 +35,7 @@ export const CUES = {
 export const ERR_TAG = { depth: "thigh", too_deep: "thigh", trunk: "trunk", knee_fwd: "shin",
                          heel: "foot", valgus: "legs", shift: "pelvis" };
 
+export const IPF_OFFSET = 0.055;
 const SIDE_PTS = ["ear", "shoulder", "elbow", "wrist", "hip", "knee", "ankle", "heel", "toe"];
 const deg = (r) => (r * 180) / Math.PI;
 const rad = (d) => (d * Math.PI) / 180;
@@ -221,6 +222,10 @@ export class Coach {
         thigh: thighAngle(p.hip, p.knee),
         shin, trunk, tms: trunk - shin,
         heel: (cal.heelY - p.heel.y) / cal.shin,
+        // IPF depth rule (hip crease below the top of the knee) on joint centres, in thigh
+        // lengths: >= 0 = below parallel. +0.055 is the joint-centre vs anatomical offset
+        // calibrated on 11 referee-annotated reps by I. Necerini (Streetlifting-RefereeAI, docs/05)
+        ipf: (p.hip.y - p.knee.y) / cal.thigh + IPF_OFFSET,
       };
     }
     const hp = mid(kp.hip_l, kp.hip_r), sh = mid(kp.shoulder_l, kp.shoulder_r);
@@ -263,6 +268,8 @@ export class Coach {
     const win = frames.slice(Math.max(b - 2, 0), b + 3);
     const keys = Object.keys(frames[b].m);
     const v = Object.fromEntries(keys.map((k) => [k, median(win.map((f) => f.m[k]))]));
+    // IPF: the deepest moment of the rep counts, not only the frame of maximum drop
+    if (this.cal.view === "side") v.ipf = Math.max(...frames.map((f) => f.m.ipf).filter(Number.isFinite));
     const err = [];
     let delta = null;
     if (this.cal.view === "side") {

@@ -1,9 +1,12 @@
 import { Coach, correctedFrame, sessionSummary, CUES, ERR_TAG, RULES_SIDE, RULES_FRONT } from "./coach.js";
 import { drawSkeleton, drawMannequin, angleLabels, SIDE_EDGES, FRONT_EDGES, COL } from "./draw.js";
-import { loadSessions, saveSession, clearSessions, renderHistory } from "./history.js";
+import * as SES from "./session.js";
+import { setTraceChart, tempoChart } from "./charts.js";
+import { byId } from "./catalog.js";
 import { MovementCoach } from "./movement.js";
 import { EXERCISES } from "./exercises.js";
-import { initFlow, isFirstLaunch, loadProfile, onAssessmentStep, renderHome, renderMovementSummary } from "./flow.js";
+import { initFlow, isFirstLaunch, loadProfile, onAssessmentStep, renderHome, renderMovementSummary,
+         showSession, showHistory } from "./flow.js";
 
 const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
@@ -21,6 +24,8 @@ const S = {
   // kind: "squat" (side-view squat coach with mannequin) or "movement" (exercises.js);
   // purpose: "train" or "assess" (one step of the initial assessment)
   kind: "squat", exId: null, side: null, purpose: "train", fatigueSaid: false,
+  mpTs: 0,                    // timestamp given to MediaPipe (see tick)
+  trace: [],                  // rep signal of every active frame, for the set chart
 };
 
 // ---------------------------------------------------------------- utilities
@@ -87,7 +92,7 @@ async function startSession(mode, file, opts = { kind: "squat" }) {
   }
   speak(" ");                              // iOS: speech must start from a tap
   S.mode = mode;
-  S.reps = []; S.worst = null; S.last = null; S.view = null; S.lastTs = -1; S.fatigueSaid = false;
+  S.reps = []; S.worst = null; S.last = null; S.view = null; S.lastTs = -1; S.fatigueSaid = false; S.trace = [];
   S.kind = opts.kind;
   S.exId = opts.exId || null;
   S.side = opts.side || null;
@@ -147,14 +152,30 @@ function stopSession() {
     if (last) S.reps.push(last);
     if (S.purpose === "assess") { onAssessmentStep(S.reps); return; }
     renderMovementSummary(S.reps, S.exId);
-    show("summary");
+    finishSet(EXERCISES[S.exId].view);
     return;
   }
   const view = S.view || "side";
-  const sum = sessionSummary(S.reps, view);
-  if (S.reps.length) saveSession(sum);
-  renderSummary(sum);
+  renderSummary(sessionSummary(S.reps, view));
+  finishSet(view);
+}
+
+// End of a training set: stored in the open training session, charts of the summary.
+function finishSet(view) {
+  const id = S.kind === "squat" ? "squat" : S.exId;
+  const rec = SES.setRecord({ exId: id, name: byId(id).name, side: S.side, view, reps: S.reps });
+  if (S.reps.length) SES.addSet(rec);
+  const extra = [];
+  if (rec.ipf !== null) extra.push(`Sotto il parallelo secondo la regola IPF: ${rec.ipf} su ${rec.reps}.`);
+  if (rec.best !== null) extra.push(`Voto FMS della ripetizione migliore: ${rec.best} su 3.`);
+  if (extra.length) $("sMain").textContent += " " + extra.join(" ");
+  $("sCharts").hidden = !S.reps.length;
   show("summary");
+  if (!S.reps.length) return;
+  const reps = S.reps.map((r) => ({ t0: r.frames[0].t, t1: r.frames[r.frames.length - 1].t, ok: r.ok }));
+  setTraceChart($("sTrace"), S.trace, reps);
+  const notes = tempoChart($("sTempo"), rec.up, S.reps.map((r) => r.ok));
+  $("sTempoNote").innerHTML = notes.map((t) => `<li>${t}</li>`).join("");
 }
 
 // Video file: step through EVERY frame (seek + analyse), slower than real time on
@@ -200,8 +221,11 @@ function tick() {
 
   let ts = S.mode === "file" ? v.currentTime * 1000 : performance.now();
   if (ts <= S.lastTs) ts = S.lastTs + 1;
+  // MediaPipe needs increasing timestamps over its whole life, also across sets
+  // (a video file restarts from 0): it gets its own clock, advanced by the frame time
+  S.mpTs += S.lastTs < 0 ? 33 : ts - S.lastTs;
   S.lastTs = ts;
-  const res = S.landmarker.detectForVideo(v, ts);
+  const res = S.landmarker.detectForVideo(v, S.mpTs);
   const lm = res.landmarks?.[0];
   const kp = {};
   if (lm) for (const [i, n] of Object.entries(LM)) {
@@ -222,6 +246,7 @@ function tick() {
   }
   const ev = coach.push(kp, ts, W, H, img);
   const lw = Math.max(3, W / 220), fs = Math.max(16, W / 42);
+  if (ev.frame) S.trace.push({ t: ts, s: ev.frame.a });
 
   if (ev.type === "guide") {
     setGuide(ev.msg, ev.progress);
@@ -251,6 +276,7 @@ function tick() {
 function tickMovement(ctx, kp, lm, ts, W, H) {
   const ev = S.coach.push(kp, ts, W, H);
   const lw = Math.max(3, W / 220);
+  if (ev.frame) S.trace.push({ t: ts, s: ev.frame.s });
   if (ev.type === "guide") {
     setGuide(ev.msg, ev.progress);
     if (lm) drawSkeleton(ctx, kp, FRONT_EDGES, () => COL.neutral, lw * 0.7);
@@ -421,9 +447,6 @@ function replayLoop(now) {
 }
 
 // ---------------------------------------------------------------- wiring
-$("btnStart").onclick = () => startSession("camera");
-$("btnFile").onclick = () => $("fileInput").click();
-$("fileInput").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) startSession("file", f); };
 $("btnStop").onclick = () => stopSession();
 $("btnVoice").textContent = S.voice ? "🔊" : "🔇";
 $("btnVoice").onclick = () => {
@@ -441,12 +464,11 @@ $("btnFlip").onclick = async () => {
 };
 $("btnWorst").onclick = () => S.worst && openReplay(S.worst);
 $("btnAgain").onclick = () => startSession("camera", null, { kind: S.kind, exId: S.exId, side: S.side, purpose: "train" });
-$("btnHome1").onclick = () => { renderHome(); show("home"); };
-$("btnHome2").onclick = () => show("home");
-$("btnHistory").onclick = () => { show("history"); renderHistory($("chart"), $("histList"), loadSessions()); };
+$("btnHome1").onclick = () => showSession();
+$("btnHome2").onclick = () => { renderHome(); show("home"); };
 $("btnClear").onclick = () => {
-  if (confirm("Cancellare tutto lo storico su questo telefono?")) {
-    clearSessions(); renderHistory($("chart"), $("histList"), []);
+  if (confirm("Cancellare tutto lo storico degli allenamenti su questo telefono?")) {
+    SES.clearSessions(); renderHome(); showHistory();
   }
 };
 $("btnCloseReplay").onclick = () => { cancelAnimationFrame(RP.raf); show("summary"); };
@@ -473,7 +495,9 @@ if ("serviceWorker" in navigator && window.isSecureContext) {
 initFlow({
   show,
   speak,
-  startSquat: () => startSession("camera", null, { kind: "squat" }),
+  // training set of any exercise of catalog.js, from the camera or from a video file
+  startTrain: (id, side, mode, file) => startSession(mode, file, id === "squat" ? { kind: "squat" }
+    : { kind: "movement", exId: id, side, purpose: "train" }),
   startExercise: (exId, side, purpose) => startSession("camera", null, { kind: "movement", exId, side, purpose }),
   // used by the automated tests: same as startExercise but on a video file
   startExerciseFile: (file, exId, side, purpose) => startSession("file", file, { kind: "movement", exId, side, purpose }),
