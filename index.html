@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Movement Coach</title>
+  <meta name="description" content="Valutazione del movimento, piano di lavoro e correzione a voce degli esercizi con la fotocamera.">
+  <meta name="theme-color" content="#0f1114">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Movement Coach">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- WELCOME (first launch) -->
+<section id="welcome" class="screen scroll">
+  <div class="page">
+    <img class="logo" src="icons/icon-192.png" alt="">
+    <h1>Benvenuto</h1>
+    <p class="lead">Prima di allenarti facciamo un controllo di come ti muovi: 7 test brevi, ripresi con la fotocamera. Alla fine ricevi un punteggio e un piano di lavoro su quello che conviene migliorare.</p>
+    <div class="tips">
+      <h2>Ti serviranno</h2>
+      <ul>
+        <li>circa 15 minuti e 3 m di spazio libero;</li>
+        <li>un bastone (va bene un manico di scopa), un elastico o una corda da tendere all'altezza della tibia, un tappetino;</li>
+        <li>un appoggio per il telefono (una sedia, dei libri).</li>
+      </ul>
+    </div>
+    <label class="field">Statura (cm) <span class="small">serve per misurare le mani nel test delle spalle</span>
+      <input id="inHeight" type="number" inputmode="numeric" min="120" max="220" placeholder="es. 170">
+    </label>
+    <button id="btnAssess" class="btn primary">Inizia la valutazione</button>
+    <button id="btnSkipAssess" class="btn">Salta, la farò dopo</button>
+    <p class="small">I test sono ispirati al Functional Movement Screen. Non sostituiscono una visita: se un movimento fa male, fermati e dillo nell'app.</p>
+  </div>
+</section>
+
+<!-- TEST INTRO (one assessment step) -->
+<section id="testIntro" class="screen scroll">
+  <div class="page">
+    <p id="tiStep" class="small"></p>
+    <h1 id="tiTitle"></h1>
+    <p id="tiTool" class="lead"></p>
+    <ol id="tiSteps" class="steps"></ol>
+    <button id="btnTestGo" class="btn primary">Sono pronto</button>
+    <button id="btnTestManual" class="btn" hidden>Misura a mano, con un aiutante</button>
+    <div id="tiManual" class="manual" hidden></div>
+    <button id="btnTestSkip" class="btn">Salta questo test</button>
+    <button id="btnTestQuit" class="btn small">Interrompi la valutazione</button>
+  </div>
+</section>
+
+<!-- TEST RESULT -->
+<section id="testResult" class="screen scroll">
+  <div class="page">
+    <p id="trStep" class="small"></p>
+    <h1 id="trTitle"></h1>
+    <div class="score-big"><span id="trScore">–</span><small>su 3</small></div>
+    <ul id="trFaults" class="faults"></ul>
+    <h2>Hai sentito dolore durante il test?</h2>
+    <div class="row">
+      <button id="btnPainNo" class="btn primary">No, continua</button>
+      <button id="btnPainYes" class="btn">Sì</button>
+    </div>
+    <button id="btnTestRedo" class="btn small">Rifai questo test</button>
+  </div>
+</section>
+
+<!-- ASSESSMENT RESULTS -->
+<section id="results" class="screen scroll">
+  <div class="page">
+    <h1>Il tuo profilo di movimento</h1>
+    <div class="score-big"><span id="rsTotal">–</span><small id="rsMax">su 21</small></div>
+    <div id="rsBars" class="bars"></div>
+    <p id="rsNote" class="main-err"></p>
+    <button id="btnSeePlan" class="btn primary">Vedi il piano di lavoro</button>
+    <button id="btnHome3" class="btn">Home</button>
+  </div>
+</section>
+
+<!-- PLAN -->
+<section id="plan" class="screen scroll">
+  <div class="page">
+    <div class="row head">
+      <button id="btnHome4" class="round" aria-label="Indietro">←</button>
+      <h1>Piano di lavoro</h1>
+    </div>
+    <p id="plSub" class="lead"></p>
+    <div id="plBlocks"></div>
+    <p id="plNote" class="small"></p>
+  </div>
+</section>
+
+<!-- EXERCISE LIST -->
+<section id="exercises" class="screen scroll">
+  <div class="page">
+    <div class="row head">
+      <button id="btnHome5" class="round" aria-label="Indietro">←</button>
+      <h1>Esercizi</h1>
+    </div>
+    <p class="lead">Scegli un esercizio: la fotocamera conta le ripetizioni e la voce ti dice cosa correggere.</p>
+    <div id="exList" class="ex-list"></div>
+  </div>
+</section>
+
+<!-- HOME -->
+<section id="home" class="screen active">
+  <div class="home-wrap">
+    <img class="logo" src="icons/icon-192.png" alt="">
+    <h1>Movement Coach</h1>
+    <p class="lead">Valuta come ti muovi, segui il tuo piano e allenati con la correzione a voce.</p>
+    <div id="homeScore" class="home-score" hidden></div>
+
+    <button id="btnPlan" class="btn primary" hidden>Il mio piano di lavoro</button>
+    <button id="btnTrain" class="btn">Esercizi con correzione</button>
+    <button id="btnStart" class="btn">Squat di lato (con manichino)</button>
+    <button id="btnNewAssess" class="btn">Valutazione iniziale</button>
+    <button id="btnFile" class="btn">Analizza un video di squat</button>
+    <button id="btnHistory" class="btn">Storico squat</button>
+    <input id="fileInput" type="file" accept="video/*" hidden>
+
+    <div class="tips">
+      <h2>Come posizionare il telefono</h2>
+      <ol>
+        <li>Telefono <b>dritto</b>, appoggiato all'altezza del bacino, a <b>2–3 m</b> da te.</li>
+        <li>Devi vederti <b>dalla testa ai piedi</b>.</li>
+        <li><b>Di lato</b>: controllo profondità, busto, ginocchia e talloni.<br>
+            <b>Di fronte</b>: controllo ginocchia verso l'interno e peso spostato.</li>
+        <li>Stai fermo in piedi un secondo: quando senti “Pronto”, parti.</li>
+      </ol>
+    </div>
+    <p id="modelStatus" class="status"></p>
+  </div>
+</section>
+
+<!-- LIVE -->
+<section id="live" class="screen">
+  <div class="stage-wrap">
+    <canvas id="stage"></canvas>
+    <video id="video" playsinline muted></video>
+  </div>
+  <div class="hud-top">
+    <div class="counter"><span id="repCount">0</span><small>ripetizioni</small></div>
+    <div class="counter ok"><span id="okCount">0</span><small>corrette</small></div>
+    <div id="viewBadge" class="badge" hidden></div>
+  </div>
+  <div id="guide" class="guide">
+    <p id="guideText">Caricamento…</p>
+    <div class="bar"><div id="guideBar"></div></div>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+  <div class="hud-bottom">
+    <button id="btnVoice" class="round" aria-label="Voce">🔊</button>
+    <button id="btnStop" class="btn stop">Fine serie</button>
+    <button id="btnFlip" class="round" aria-label="Cambia fotocamera">⟲</button>
+  </div>
+</section>
+
+<!-- SUMMARY -->
+<section id="summary" class="screen scroll">
+  <div class="page">
+    <h1>Riepilogo serie</h1>
+    <div class="tiles">
+      <div class="tile"><span id="sReps">0</span><small>ripetizioni</small></div>
+      <div class="tile good"><span id="sOk">0</span><small>corrette</small></div>
+      <div class="tile"><span id="sPct">0%</span><small>precisione</small></div>
+    </div>
+    <p id="sMain" class="main-err"></p>
+    <button id="btnWorst" class="btn primary" hidden>Rivedi la peggiore al rallentatore</button>
+    <div id="repList" class="rep-list"></div>
+    <div class="row">
+      <button id="btnAgain" class="btn primary">Nuova serie</button>
+      <button id="btnHome1" class="btn">Home</button>
+    </div>
+  </div>
+</section>
+
+<!-- REPLAY -->
+<section id="replay" class="screen">
+  <div class="replay-head">
+    <button id="btnCloseReplay" class="round" aria-label="Chiudi">✕</button>
+    <div id="replayTitle"></div>
+  </div>
+  <div class="pair">
+    <figure><figcaption>REALE</figcaption><canvas id="cvReal"></canvas></figure>
+    <figure><figcaption class="fix">CORRETTO</figcaption><canvas id="cvFix"></canvas></figure>
+  </div>
+  <div id="replayErr" class="replay-err"></div>
+  <div class="replay-ctl">
+    <button id="btnPlay" class="round">⏸</button>
+    <input id="scrub" type="range" min="0" max="1000" value="0">
+    <button id="btnSpeed" class="btn small">0.3×</button>
+  </div>
+  <p class="legend"><span class="sw g"></span>tu &nbsp; <span class="sw r"></span>sbagliato &nbsp; <span class="sw c"></span>corretto</p>
+</section>
+
+<!-- HISTORY -->
+<section id="history" class="screen scroll">
+  <div class="page">
+    <div class="row head">
+      <button id="btnHome2" class="round" aria-label="Indietro">←</button>
+      <h1>Storico</h1>
+    </div>
+    <div class="chart-card">
+      <h2>Ripetizioni corrette per sessione</h2>
+      <p class="sub">percentuale sul totale della serie</p>
+      <div id="chart" class="chart"></div>
+    </div>
+    <div id="histList" class="hist-list"></div>
+    <button id="btnClear" class="btn danger small">Cancella storico</button>
+  </div>
+</section>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
