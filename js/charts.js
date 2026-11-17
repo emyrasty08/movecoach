@@ -127,7 +127,7 @@ export function historyChart(container, points, { vmax = 100, unit = "%", label 
     return;
   }
   const data = points.slice(-20);
-  const W = Math.max(container.clientWidth, 280), H = 210, m = { l: 40, r: 14, t: 16, b: 28 };
+  const W = Math.max(container.clientWidth, 280), H = 210, m = { l: 40, r: 14, t: 26, b: 28 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const x = (i) => m.l + (data.length === 1 ? iw / 2 : (i * iw) / (data.length - 1));
   const y = (v) => m.t + ih - (v / vmax) * ih;

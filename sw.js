@@ -1,6 +1,6 @@
 // Offline support: app files cache-first; MediaPipe library and model are
 // cached on first use, so after one online session the app also works offline.
-const CACHE = "movecoach-v4";
+const CACHE = "movecoach-v5";
 const APP = ["./", "index.html", "style.css", "manifest.webmanifest", "js/main.js", "js/coach.js",
              "js/draw.js", "js/history.js", "js/geometry.js", "js/movement.js", "js/exercises.js", "js/plan.js", "js/flow.js", "js/catalog.js", "js/session.js", "js/charts.js", "icons/icon-192.png", "icons/icon-512.png",
              "icons/apple-touch-icon.png"];
