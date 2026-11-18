@@ -1,12 +1,11 @@
-import { Coach, correctedFrame, sessionSummary, CUES, ERR_TAG, RULES_SIDE, RULES_FRONT } from "./coach.js";
-import { drawSkeleton, drawMannequin, angleLabels, SIDE_EDGES, FRONT_EDGES, COL } from "./draw.js";
+import { drawSkeleton, drawMannequin, drawDashed, FRONT_EDGES, COL } from "./draw.js";
 import * as SES from "./session.js";
-import { setTraceChart, tempoChart } from "./charts.js";
+import { setTraceChart, ruleChart, phasesChart } from "./charts.js";
 import { byId } from "./catalog.js";
 import { MovementCoach } from "./movement.js";
 import { EXERCISES } from "./exercises.js";
-import { initFlow, isFirstLaunch, loadProfile, onAssessmentStep, renderHome, renderMovementSummary,
-         showSession, showHistory } from "./flow.js";
+import { correctFrame, limitText } from "./correct.js";
+import { initFlow, isFirstLaunch, loadProfile, onAssessmentStep, goTab, SIDE_NAME } from "./flow.js";
 
 const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
@@ -14,18 +13,24 @@ const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/p
 const LM = { 0: "nose", 7: "ear_l", 8: "ear_r", 11: "shoulder_l", 12: "shoulder_r", 13: "elbow_l", 14: "elbow_r",
   15: "wrist_l", 16: "wrist_r", 23: "hip_l", 24: "hip_r", 25: "knee_l", 26: "knee_r", 27: "ankle_l", 28: "ankle_r",
   29: "heel_l", 30: "heel_r", 31: "toe_l", 32: "toe_r" };
+const MAX_PEOPLE = 3;         // people detected per frame: the one training is then picked (pickPerson)
 const SNAP_W = 360;           // width of the frames kept for the replay
+const TAB_SCREENS = new Set(["home", "train", "history", "profile"]);
 const $ = (id) => document.getElementById(id);
 
 const S = {
   landmarker: null, coach: null, mode: "camera", facing: "user", stream: null, running: false,
-  voice: loadPref("voice", true), lastTs: -1, reps: [], view: null, worst: null, last: null,
+  voice: loadPref("voice", true), lastTs: -1, reps: [], worst: null, last: null,
   wakeLock: null, toastTimer: 0, snapScale: 1,
-  // kind: "squat" (side-view squat coach with mannequin) or "movement" (exercises.js);
-  // purpose: "train" or "assess" (one step of the initial assessment)
-  kind: "squat", exId: null, side: null, purpose: "train", fatigueSaid: false,
+  exId: null, side: null,
+  purpose: "train",           // "train" (free set), "test" (one FMS test), "assess" (step of the initial assessment)
+  fatigueSaid: false,
   mpTs: 0,                    // timestamp given to MediaPipe (see tick)
-  trace: [],                  // rep signal of every active frame, for the set chart
+  trace: [],                  // {t, s, m} of every active frame, for the set charts
+  target: null,               // {x, y, h} of the person being followed, normalized image coords
+  others: [],                 // other people in the frame (drawn faint, can be tapped)
+  crowdSaid: false,
+  rec: null,                  // set record of the last set (session.js)
 };
 
 // ---------------------------------------------------------------- utilities
@@ -37,6 +42,11 @@ function savePref(k, v) { try { localStorage.setItem(`squatcoach.${k}`, JSON.str
 
 function show(id) {
   for (const s of document.querySelectorAll(".screen")) s.classList.toggle("active", s.id === id);
+  const tab = TAB_SCREENS.has(id);
+  $("tabbar").hidden = !tab;
+  if (tab) for (const b of $("tabbar").querySelectorAll("button")) b.classList.toggle("on", b.dataset.tab === id);
+  window.scrollTo(0, 0);
+  document.getElementById(id)?.scrollTo?.(0, 0);
 }
 
 // Android Chrome drops an utterance queued right after cancel(): cancel only if
@@ -77,28 +87,28 @@ async function loadModel() {
   const { FilesetResolver, PoseLandmarker } = await import(`${MP}/vision_bundle.mjs`);
   const fileset = await FilesetResolver.forVisionTasks(`${MP}/wasm`);
   const opts = (delegate) => ({ baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "VIDEO",
-                                numPoses: 1, minPoseDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+                                numPoses: MAX_PEOPLE, minPoseDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
   try { S.landmarker = await PoseLandmarker.createFromOptions(fileset, opts("GPU")); }
   catch { S.landmarker = await PoseLandmarker.createFromOptions(fileset, opts("CPU")); }
   $("modelStatus").textContent = "";
 }
 
 // ---------------------------------------------------------------- session
-// opts: { kind: "squat" } or { kind: "movement", exId, side, purpose }
-async function startSession(mode, file, opts = { kind: "squat" }) {
+// opts: { exId, side, purpose }
+async function startSession(mode, file, opts) {
   if (mode === "camera" && !(window.isSecureContext && navigator.mediaDevices?.getUserMedia)) {
     alert("Per usare la fotocamera la pagina deve essere aperta in HTTPS.");
     return;
   }
   speak(" ");                              // iOS: speech must start from a tap
   S.mode = mode;
-  S.reps = []; S.worst = null; S.last = null; S.view = null; S.lastTs = -1; S.fatigueSaid = false; S.trace = [];
-  S.kind = opts.kind;
-  S.exId = opts.exId || null;
+  S.reps = []; S.worst = null; S.last = null; S.lastTs = -1; S.fatigueSaid = false; S.trace = [];
+  S.target = null; S.others = []; S.crowdSaid = false;
+  S.exId = opts.exId;
   S.side = opts.side || null;
   S.purpose = opts.purpose || "train";
-  S.coach = S.kind === "squat" ? new Coach() : new MovementCoach(EXERCISES[S.exId], S.side, loadProfile());
-  $("btnStop").textContent = S.purpose === "assess" ? "Fine test" : "Fine serie";
+  S.coach = new MovementCoach(EXERCISES[S.exId], S.side, loadProfile());
+  $("btnStop").textContent = S.purpose === "train" ? "Fine serie" : "Fine test";
   $("repCount").textContent = "0";
   $("okCount").textContent = "0";
   $("viewBadge").hidden = true;
@@ -121,7 +131,7 @@ async function startSession(mode, file, opts = { kind: "squat" }) {
   } catch (e) {
     console.error(e);
     alert("Non riesco ad avviare: " + (e.message || e));
-    show("home");
+    goTab("home");
     return;
   }
   try { S.wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
@@ -147,35 +157,13 @@ function stopSession() {
   $("video").pause();
   S.wakeLock?.release?.().catch(() => {});
   speechSynthesis?.cancel?.();
-  if (S.kind === "movement") {
-    const last = S.coach.finish?.();        // a repetition still in progress
-    if (last) S.reps.push(last);
-    if (S.purpose === "assess") { onAssessmentStep(S.reps); return; }
-    renderMovementSummary(S.reps, S.exId);
-    finishSet(EXERCISES[S.exId].view);
-    return;
-  }
-  const view = S.view || "side";
-  renderSummary(sessionSummary(S.reps, view));
-  finishSet(view);
-}
-
-// End of a training set: stored in the open training session, charts of the summary.
-function finishSet(view) {
-  const id = S.kind === "squat" ? "squat" : S.exId;
-  const rec = SES.setRecord({ exId: id, name: byId(id).name, side: S.side, view, reps: S.reps });
-  if (S.reps.length) SES.addSet(rec);
-  const extra = [];
-  if (rec.ipf !== null) extra.push(`Sotto il parallelo secondo la regola IPF: ${rec.ipf} su ${rec.reps}.`);
-  if (rec.best !== null) extra.push(`Voto FMS della ripetizione migliore: ${rec.best} su 3.`);
-  if (extra.length) $("sMain").textContent += " " + extra.join(" ");
-  $("sCharts").hidden = !S.reps.length;
-  show("summary");
-  if (!S.reps.length) return;
-  const reps = S.reps.map((r) => ({ t0: r.frames[0].t, t1: r.frames[r.frames.length - 1].t, ok: r.ok }));
-  setTraceChart($("sTrace"), S.trace, reps);
-  const notes = tempoChart($("sTempo"), rec.up, S.reps.map((r) => r.ok));
-  $("sTempoNote").innerHTML = notes.map((t) => `<li>${t}</li>`).join("");
+  const last = S.coach.finish?.();          // a repetition still in progress
+  if (last) addRep(last, false);
+  if (S.purpose === "assess") { onAssessmentStep(S.reps); return; }
+  const ex = EXERCISES[S.exId];
+  S.rec = SES.setRecord({ exId: S.exId, name: byId(S.exId).name, mode: S.purpose, side: S.side, view: ex.view, reps: S.reps });
+  if (S.reps.length || S.purpose === "test") SES.addSet(S.rec);
+  renderSummary();
 }
 
 // Video file: step through EVERY frame (seek + analyse), slower than real time on
@@ -206,6 +194,58 @@ function setGuide(text, prog) {
   $("guideBar").parentElement.style.visibility = prog ? "visible" : "hidden";
 }
 
+// ---------------------------------------------------------------- which person
+// MediaPipe returns up to MAX_PEOPLE poses in no fixed order. With a second person
+// in the frame (a spotter, someone walking by) the app must keep following the one
+// training: once chosen, the person nearest to where they were in the last frame
+// (same size too) is kept. The first choice is the biggest and most central one,
+// and a tap on the screen chooses another.
+function personBox(lm, mirror) {
+  const xs = lm.map((p) => (mirror ? 1 - p.x : p.x)), ys = lm.map((p) => p.y);
+  const hip = { x: (xs[23] + xs[24]) / 2, y: (ys[23] + ys[24]) / 2 };
+  const sh = { x: (xs[11] + xs[12]) / 2, y: (ys[11] + ys[12]) / 2 };
+  return { x: (hip.x + sh.x) / 2, y: (hip.y + sh.y) / 2, h: Math.max(...ys) - Math.min(...ys) };
+}
+
+function pickPerson(all, mirror) {
+  if (!all?.length) return null;
+  const boxes = all.map((lm) => personBox(lm, mirror));
+  let best = 0;
+  if (S.target) {
+    const cost = (b) => Math.hypot(b.x - S.target.x, b.y - S.target.y) + 0.5 * Math.abs(b.h - S.target.h);
+    boxes.forEach((b, i) => { if (cost(b) < cost(boxes[best])) best = i; });
+    // lost (the person left, or MediaPipe swapped): keep the target until they come back
+    if (cost(boxes[best]) > 0.35) { S.others = all; return null; }
+  } else {
+    const score = (b) => b.h * (1 - Math.abs(b.x - 0.5));
+    boxes.forEach((b, i) => { if (score(b) > score(boxes[best])) best = i; });
+  }
+  S.target = boxes[best];
+  S.others = all.filter((_, i) => i !== best);
+  if (S.others.length && !S.crowdSaid && S.mode === "camera") {
+    S.crowdSaid = true;
+    toast("Vedo più persone: tocca sullo schermo chi si allena", false);
+  }
+  return all[best];
+}
+
+// Tap on the live image: follow the person nearest to the tap.
+function onStageTap(ev) {
+  const cv = $("stage"), r = cv.getBoundingClientRect();
+  const tap = { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height };
+  const mirror = S.mode === "camera" && S.facing === "user";
+  const cands = S.others.map((lm) => personBox(lm, mirror));
+  if (!cands.length) return;
+  let b = 0;
+  cands.forEach((c, i) => { if (Math.hypot(c.x - tap.x, c.y - tap.y) < Math.hypot(cands[b].x - tap.x, cands[b].y - tap.y)) b = i; });
+  S.target = cands[b];
+  // a new person: calibrate again on them, keep the reps done
+  const reps = S.reps;
+  S.coach = new MovementCoach(EXERCISES[S.exId], S.side, loadProfile());
+  S.reps = reps;
+  toast("Ok, seguo questa persona", true);
+}
+
 // ---------------------------------------------------------------- per frame
 function tick() {
   const v = $("video");
@@ -226,57 +266,34 @@ function tick() {
   S.mpTs += S.lastTs < 0 ? 33 : ts - S.lastTs;
   S.lastTs = ts;
   const res = S.landmarker.detectForVideo(v, S.mpTs);
-  const lm = res.landmarks?.[0];
-  const kp = {};
-  if (lm) for (const [i, n] of Object.entries(LM)) {
-    const p = lm[i];
-    kp[n] = { x: (mirror ? 1 - p.x : p.x) * W, y: p.y * H, v: p.visibility ?? 1 };
-  }
+  const lm = pickPerson(res.landmarks, mirror);
+  const toKp = (l) => {
+    const kp = {};
+    for (const [i, n] of Object.entries(LM)) {
+      const p = l[i];
+      kp[n] = { x: (mirror ? 1 - p.x : p.x) * W, y: p.y * H, v: p.visibility ?? 1 };
+    }
+    return kp;
+  };
+  const lw = Math.max(3, W / 220);
+  for (const o of S.others) drawSkeleton(ctx, toKp(o), FRONT_EDGES, () => "rgba(255,255,255,0.35)", lw * 0.5);
+  const kp = lm ? toKp(lm) : {};
   const coach = S.coach;
   if (coach.phase === "active" && !lm) { setGuide("Non ti vedo: torna nell'inquadratura", 0); return; }
-  if (S.kind === "movement") { tickMovement(ctx, kp, lm, ts, W, H); return; }
 
-  let img = null;
-  if (coach.phase === "active") {
-    img = document.createElement("canvas");
+  const ev = coach.push(kp, ts, W, H);
+  const ex = EXERCISES[S.exId];
+  if (ev.frame) {
+    S.trace.push({ t: ts, s: ev.frame.s, m: ev.frame.m });
+    // small copy of the frame for the replay (kept only for the worst and the last rep)
+    const img = document.createElement("canvas");
     img.width = SNAP_W;
     img.height = Math.round((H * SNAP_W) / W);
     img.getContext("2d").drawImage(cv, 0, 0, img.width, img.height);
+    ev.frame.img = img;
     S.snapScale = SNAP_W / W;
   }
-  const ev = coach.push(kp, ts, W, H, img);
-  const lw = Math.max(3, W / 220), fs = Math.max(16, W / 42);
-  if (ev.frame) S.trace.push({ t: ts, s: ev.frame.a });
-
-  if (ev.type === "guide") {
-    setGuide(ev.msg, ev.progress);
-    if (lm) drawSkeleton(ctx, kp, FRONT_EDGES, () => COL.neutral, lw * 0.7);
-    return;
-  }
-  if (ev.type === "calibrated") {
-    S.view = S.view || ev.view;
-    setGuide("", 0);
-    $("viewBadge").textContent = ev.view === "side" ? "Vista laterale" : "Vista frontale";
-    $("viewBadge").hidden = false;
-    speak("Pronto. Inizia quando vuoi");
-    toast(ev.view === "side" ? "Pronto! Ti vedo di lato" : "Pronto! Ti vedo di fronte", true);
-    return;
-  }
-  setGuide("", 0);
-  const view = coach.cal.view;
-  const live = ev.live || new Set();
-  const edges = view === "side" ? SIDE_EDGES : FRONT_EDGES;
-  drawSkeleton(ctx, ev.frame.kp, edges, (t) => (live.has(t) ? COL.bad : COL.ok), lw);
-  angleLabels(ctx, ev.frame.kp, view, coach.cal.f || 1, "#fff", live, fs);
-  if (ev.type === "repEnd") onRep(ev.rep);
-}
-
-// Frame of a "movement" exercise: guidance, skeleton with the faulty parts in red,
-// spoken feedback at the end of each repetition.
-function tickMovement(ctx, kp, lm, ts, W, H) {
-  const ev = S.coach.push(kp, ts, W, H);
-  const lw = Math.max(3, W / 220);
-  if (ev.frame) S.trace.push({ t: ts, s: ev.frame.s });
+  if (ev.type === "lost") { setGuide("Non ti distinguo bene: c'è qualcuno vicino o davanti a te?", 0); return; }
   if (ev.type === "guide") {
     setGuide(ev.msg, ev.progress);
     if (lm) drawSkeleton(ctx, kp, FRONT_EDGES, () => COL.neutral, lw * 0.7);
@@ -284,7 +301,7 @@ function tickMovement(ctx, kp, lm, ts, W, H) {
   }
   if (ev.type === "calibrated") {
     setGuide("", 0);
-    $("viewBadge").textContent = EXERCISES[S.exId].name + (S.side ? (S.side === "l" ? " · sinistra" : " · destra") : "");
+    $("viewBadge").textContent = ex.name + (S.side ? ` · ${SIDE_NAME[S.side]}` : "");
     $("viewBadge").hidden = false;
     speak("Pronto. Inizia quando vuoi");
     toast("Pronto!", true);
@@ -292,16 +309,33 @@ function tickMovement(ctx, kp, lm, ts, W, H) {
   }
   setGuide("", 0);
   const live = ev.live || new Set();
+  if (ex.refLine) drawDashed(ctx, ...ex.refLine(ev.frame.kp), "rgba(255,255,255,0.7)", lw * 0.6);
   drawSkeleton(ctx, ev.frame.kp, FRONT_EDGES, (t) => (live.has(t) ? COL.bad : COL.ok), lw);
-  if (ev.type !== "repEnd") return;
-  const rep = ev.rep;
+  if (ev.type === "repEnd") addRep(ev.rep, true);
+}
+
+// A finished repetition: counters, voice, fatigue, and which frames to keep.
+function addRep(rep, say) {
   S.reps.push(rep);
+  rep.index = S.reps.length;
+  rep.thumb = rep.frames[rep.peak].img;
   $("repCount").textContent = String(S.reps.length);
   $("okCount").textContent = String(S.reps.filter((r) => r.ok).length);
   const n = S.reps.length;
-  if (rep.ok) { toast(`Rip. ${n}: bene!`, true); speak(`${n}. Bene`); }
-  else { toast(`Rip. ${n}: ${rep.errors[0].text}`, false); speak(`${n}. ${rep.errors[0].cue}`); }
-  checkFatigue(S.reps.map((r) => r.frames[r.frames.length - 1].t - r.frames[r.peak].t));
+  if (say) {
+    if (rep.ok) { toast(`Rip. ${n}: bene!`, true); speak(`${n}. Bene`); }
+    else { toast(`Rip. ${n}: ${rep.errors[0].text}`, false); speak(`${n}. ${rep.errors[0].cue}`); }
+    checkFatigue(S.reps.map((r) => r.phases.up));
+  }
+  // keep the images only of the worst and of the last rep: memory
+  const bad = (r) => r.errors.length * 10 + (3 - r.score);
+  const prevLast = S.last;
+  if (!rep.ok && (!S.worst || bad(rep) > bad(S.worst))) {
+    if (S.worst && S.worst !== prevLast) dropImages(S.worst);
+    S.worst = rep;
+  }
+  if (prevLast && prevLast !== S.worst) dropImages(prevLast);
+  S.last = rep;
 }
 
 // Fatigue (velocity-based training idea): when the way up of a repetition is 30%
@@ -318,61 +352,99 @@ function checkFatigue(ascents) {
   }
 }
 
-function onRep(rep) {
-  rep.thumb = rep.frames[rep.b].img;
-  S.reps.push(rep);
-  rep.index = S.reps.length;
-  $("repCount").textContent = String(S.reps.length);
-  $("okCount").textContent = String(S.reps.filter((r) => r.ok).length);
-  if (rep.ok) {
-    toast(`Rep ${rep.index}: bene!`, true);
-    speak(`${rep.index}. Bene`);
-  } else {
-    toast(`Rep ${rep.index}: ${rep.errors[0].text}`, false);
-    speak(`${rep.index}. ${CUES[rep.errors[0].kind]}`);
-  }
-  checkFatigue(S.reps.map((r) => r.frames[r.frames.length - 1].t - r.frames[r.b].t));
-  // keep the frames (images) only of the worst and of the last rep: memory
-  const prevLast = S.last;
-  if (rep.score > 0 && (!S.worst || rep.score > S.worst.score)) {
-    if (S.worst && S.worst !== prevLast) dropImages(S.worst);
-    S.worst = rep;
-  }
-  if (prevLast && prevLast !== S.worst) dropImages(prevLast);
-  S.last = rep;
-}
-
 function dropImages(rep) {
   for (const f of rep.frames) if (f.img !== rep.thumb) f.img = null;
 }
 const hasReplay = (rep) => rep.frames.filter((f) => f.img).length > 0.7 * rep.frames.length;
 
 // ---------------------------------------------------------------- summary
-function renderSummary(sum) {
-  $("sReps").textContent = sum.reps;
-  $("sOk").textContent = sum.correct;
-  $("sPct").textContent = `${sum.pct}%`;
-  const top = Object.entries(sum.errors).sort((a, b) => b[1] - a[1])[0];
-  const R = { ...RULES_SIDE, ...RULES_FRONT };
-  $("sMain").textContent = !sum.reps ? "Nessuna ripetizione registrata."
-    : top ? `Errore più frequente: ${R[top[0]].label.toLowerCase()} (${top[1]} su ${sum.reps}). ${CUES[top[0]]}.`
+// Tiles, per-rule tally, Park-style charts (movement, one per rule, phases),
+// one card per rep with the frame at the bottom and the corrected mannequin.
+function renderSummary() {
+  const ex = EXERCISES[S.exId], reps = S.reps, rec = S.rec, test = S.purpose === "test";
+  // only the rules measured in this set (deep squat: front or side ones)
+  const rules = ex.rules.filter((r) => !reps.length || reps.some((rp) => Number.isFinite(rp.values[r.key])));
+  const n = reps.length, ok = reps.filter((r) => r.ok).length;
+  $("sEyebrow").textContent = (test ? "Test FMS · " : "Serie · ") + ex.name + (S.side ? ` · ${SIDE_NAME[S.side]}` : "");
+  $("sTitle").textContent = test ? "Risultato del test" : "Riepilogo serie";
+  $("sReps").textContent = n;
+  $("sOk").textContent = ok;
+  $("sPct").textContent = test ? `${rec.best}/3` : `${n ? Math.round((100 * ok) / n) : 0}%`;
+  $("sPctLabel").textContent = test ? "voto FMS" : "precisione";
+  const count = {};
+  for (const r of reps) for (const e of r.errors) count[e.kind] = (count[e.kind] || 0) + 1;
+  const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+  const rule = top && rules.find((r) => r.key === top[0]);
+  $("sMain").textContent = !n ? (test ? "Nessuna ripetizione riconosciuta: movimento non completato o non visibile (voto 1)."
+                                      : "Nessuna ripetizione registrata.")
+    : rule ? `Errore più frequente (${top[1]} su ${n}): ${rule.name.replace(/\s*\(.*\)$/, "").toLowerCase()}. ${rule.cue}.`
     : "Tutte le ripetizioni corrette, ottimo!";
+  $("btnPain").hidden = !test;
+  $("btnPain").disabled = false;
+  $("btnPain").textContent = "Ho sentito dolore (voto 0)";
+  $("btnAgain").textContent = test ? "Ripeti il test" : "Altra serie";
+  // tally per rule, as "23 of 23 full range, 22 of 23 straight back" in Park's push-ups
+  $("sTally").innerHTML = !n ? "" : rules.map((r) => {
+    const good = reps.filter((rp) => !rp.errors.some((e) => e.kind === r.key)).length;
+    return `<div class="tally-row${good === n ? " ok" : ""}"><span class="tick">${good === n ? "✓" : "!"}</span>` +
+      `<span class="name">${r.name.replace(/\s*\(.*\)$/, "")}</span><b>${good}/${n}</b></div>`;
+  }).join("");
   $("btnWorst").hidden = !(S.worst && hasReplay(S.worst));
+  $("sCharts").hidden = !n;
+  show("summary");
+  if (n) {
+    const span = (r) => ({ t0: r.frames[0].t, t1: r.frames[r.frames.length - 1].t });
+    setTraceChart($("sTrace"), S.trace, reps.map((r) => ({ ...span(r), ok: r.ok })));
+    $("sRules").innerHTML = "";
+    for (const r of rules) {
+      const card = document.createElement("div");
+      card.className = "chart-card";
+      const spec = { key: r.key, name: r.name, min: r.min, max: r.max, fmt: r.fmt, ...(r.chart || {}) };
+      card.innerHTML = `<h2>${r.name}</h2><p class="sub">${limitText(r)} · zona rossa = fuori limite</p><div class="chart"></div><ul class="verdict"></ul>`;
+      $("sRules").appendChild(card);
+      ruleChart(card.querySelector(".chart"), S.trace,
+                reps.map((rp) => ({ ...span(rp), bad: rp.errors.some((e) => e.kind === r.key) })), spec);
+      card.querySelector(".verdict").innerHTML = `<li>${ruleVerdict(r, reps)}</li>`;
+    }
+    const notes = phasesChart($("sPhases"), reps.map((r) => r.phases), reps.map((r) => r.ok));
+    $("sTempoNote").innerHTML = notes.map((t) => `<li>${t}</li>`).join("");
+  }
+  renderRepList();
+}
+
+// How far from the limit: the worst rep beyond it, or the closest one to it.
+function ruleVerdict(rule, reps) {
+  const over = (v) => (rule.max !== undefined ? v - rule.max : rule.min - v);   // > 0 = beyond the limit
+  const vals = reps.map((r) => r.values[rule.key]).filter(Number.isFinite);
+  if (!vals.length) return "non misurato";
+  let w = 0;
+  reps.forEach((r, i) => { if (over(r.values[rule.key]) > over(reps[w].values[rule.key])) w = i; });
+  const bad = reps.filter((r) => r.errors.some((e) => e.kind === rule.key)).length;
+  const v = reps[w].values[rule.key];
+  return bad ? `Fuori limite in ${bad} rip. su ${reps.length}: la peggiore è la ${w + 1} con ${rule.fmt(v)} (${limitText(rule)}).`
+    : `Sempre nel limite: il valore più vicino al limite è ${rule.fmt(v)} nella rip. ${w + 1} (${limitText(rule)}).`;
+}
+
+function renderRepList() {
   const list = $("repList");
   list.innerHTML = "";
+  if (!S.reps.length) list.innerHTML = `<p class="small">Nessuna ripetizione.</p>`;
   for (const rep of S.reps) {
     const card = document.createElement("div");
     card.className = "rep-card";
     const cv = document.createElement("canvas");
-    drawRepFrame(cv, rep, rep.b, "both");
+    drawRepFrame(cv, rep, rep.peak, "both");
     const info = document.createElement("div");
     info.className = "info";
-    info.innerHTML = `<h3>Rep ${rep.index}</h3>` + (rep.ok ? `<div class="okline">✓ Corretta</div>`
-      : `<ul>${rep.errors.map((e) => `<li>${e.text}</li>`).join("")}</ul>`);
+    const p = rep.phases;
+    info.innerHTML = `<h3>Rip. ${rep.index}${S.purpose === "test" ? ` · voto ${rep.score}` : ""}</h3>` +
+      (rep.ok ? `<div class="okline">✓ Corretta</div>`
+              : `<ul>${rep.errors.map((e) => `<li>${e.text} <span class="lim">→ ${limitText(e.rule)}</span></li>`).join("")}</ul>`) +
+      `<div class="meta">giù ${fmtS(p.down)} · fermo ${fmtS(p.hold)} · su ${fmtS(p.up)}</div>`;
     if (hasReplay(rep)) {
       const b = document.createElement("button");
       b.className = "btn small";
-      b.textContent = "Rivedi al rallentatore";
+      b.textContent = rep.ok ? "Rivedi al rallentatore" : "Rivedi con la posizione corretta";
       b.onclick = () => openReplay(rep);
       info.appendChild(b);
     }
@@ -380,8 +452,9 @@ function renderSummary(sum) {
     list.appendChild(card);
   }
 }
+const fmtS = (v) => `${v.toFixed(1).replace(".", ",")} s`;
 
-// mode: "real" (real skeleton, errors red), "fix" (ghost + corrected), "both" (thumbnail)
+// mode: "real" (real skeleton, errors red), "fix" (ghost + corrected mannequin), "both" (thumbnail)
 function drawRepFrame(cv, rep, i, mode) {
   const fr = rep.frames[i];
   let img = fr.img;
@@ -394,24 +467,24 @@ function drawRepFrame(cv, rep, i, mode) {
   if (img) ctx.drawImage(img, 0, 0); else { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h); }
   const sc = S.snapScale;
   ctx.setTransform(sc, 0, 0, sc, 0, 0);
-  const edges = rep.view === "side" ? SIDE_EDGES : FRONT_EDGES;
-  const { pts, p } = correctedFrame(rep, i);
-  const bad = new Set(p > 0.3 ? rep.errors.map((e) => ERR_TAG[e.kind]) : []);
-  const lw = 3 / sc, fs = 13 / sc, f = rep.cal.f || 1;
+  const ex = EXERCISES[rep.exercise];
+  const { pts, p } = correctFrame(rep, i);
+  const bad = new Set(p > 0.3 ? rep.errors.map((e) => e.rule.part) : []);
+  const lw = 3 / sc;
   if (mode === "real") {
-    drawSkeleton(ctx, fr.kp, edges, (t) => (bad.has(t) ? COL.bad : COL.ok), lw);
-    angleLabels(ctx, fr.kp, rep.view, f, "#fff", bad, fs);
+    if (ex.refLine) drawDashed(ctx, ...ex.refLine(fr.kp), "rgba(255,255,255,0.7)", lw * 0.6);
+    drawSkeleton(ctx, fr.kp, FRONT_EDGES, (t) => (bad.has(t) ? COL.bad : COL.ok), lw);
   } else if (mode === "fix") {
     if (!rep.ok && p > 0.02) {
-      drawSkeleton(ctx, fr.kp, edges, () => COL.ghost, lw * 0.7);   // you, thin and dark
-      drawMannequin(ctx, pts, rep.view, COL.fix, 0.6);               // the coach, correct movement
-      angleLabels(ctx, pts, rep.view, f, COL.fix, new Set(), fs);
+      drawSkeleton(ctx, fr.kp, FRONT_EDGES, () => COL.ghost, lw * 0.7);   // you, thin and dark
+      drawMannequin(ctx, pts, "front", COL.fix, 0.6);                     // the coach, correct position
+      if (ex.refLine) drawDashed(ctx, ...ex.refLine(pts), COL.fix, lw * 0.6);
     } else {
-      drawSkeleton(ctx, fr.kp, edges, () => COL.ok, lw);
+      drawSkeleton(ctx, fr.kp, FRONT_EDGES, () => COL.ok, lw);
     }
   } else {
-    drawSkeleton(ctx, fr.kp, edges, (t) => (bad.has(t) ? COL.bad : COL.ok), lw * 1.2);
-    if (!rep.ok) drawMannequin(ctx, pts, rep.view, COL.fix, 0.55);
+    drawSkeleton(ctx, fr.kp, FRONT_EDGES, (t) => (bad.has(t) ? COL.bad : COL.ok), lw * 1.2);
+    if (!rep.ok) drawMannequin(ctx, pts, "front", COL.fix, 0.55);
   }
 }
 
@@ -420,8 +493,8 @@ const RP = { rep: null, playing: true, speed: 0.3, t: 0, last: 0, raf: 0 };
 
 function openReplay(rep) {
   RP.rep = rep; RP.t = 0; RP.playing = true; RP.last = performance.now();
-  $("replayTitle").textContent = `Rep ${rep.index}` + (rep.ok ? " · corretta" : "");
-  $("replayErr").textContent = rep.ok ? "" : rep.errors.map((e) => e.text).join(" · ");
+  $("replayTitle").textContent = `Rip. ${rep.index}` + (rep.ok ? " · corretta" : "");
+  $("replayErr").textContent = rep.ok ? "" : rep.errors.map((e) => `${e.text} → ${limitText(e.rule)}`).join(" · ");
   $("btnPlay").textContent = "⏸";
   show("replay");
   cancelAnimationFrame(RP.raf);
@@ -448,6 +521,7 @@ function replayLoop(now) {
 
 // ---------------------------------------------------------------- wiring
 $("btnStop").onclick = () => stopSession();
+$("stage").addEventListener("pointerdown", onStageTap);
 $("btnVoice").textContent = S.voice ? "🔊" : "🔇";
 $("btnVoice").onclick = () => {
   S.voice = !S.voice; savePref("voice", S.voice);
@@ -458,17 +532,24 @@ $("btnFlip").onclick = async () => {
   S.facing = S.facing === "user" ? "environment" : "user";
   const reps = S.reps;
   // new framing: calibrate again, keep the reps
-  S.coach = S.kind === "squat" ? new Coach() : new MovementCoach(EXERCISES[S.exId], S.side, loadProfile());
+  S.coach = new MovementCoach(EXERCISES[S.exId], S.side, loadProfile());
   S.reps = reps;
+  S.target = null;
   try { await openCamera(); } catch (e) { alert(e.message || e); }
 };
 $("btnWorst").onclick = () => S.worst && openReplay(S.worst);
-$("btnAgain").onclick = () => startSession("camera", null, { kind: S.kind, exId: S.exId, side: S.side, purpose: "train" });
-$("btnHome1").onclick = () => showSession();
-$("btnHome2").onclick = () => { renderHome(); show("home"); };
+$("btnAgain").onclick = () => startSession("camera", null, { exId: S.exId, side: S.side, purpose: S.purpose });
+$("btnDone").onclick = () => goTab("home");
+$("btnPain").onclick = () => {
+  SES.updateLastSet({ best: 0, pain: true });
+  S.rec.best = 0;
+  $("sPct").textContent = "0/3";
+  $("btnPain").disabled = true;
+  $("btnPain").textContent = "Dolore registrato: voto 0. Fatti vedere da un professionista prima di allenare questo movimento.";
+};
 $("btnClear").onclick = () => {
   if (confirm("Cancellare tutto lo storico degli allenamenti su questo telefono?")) {
-    SES.clearSessions(); renderHome(); showHistory();
+    SES.clearSessions(); goTab("history");
   }
 };
 $("btnCloseReplay").onclick = () => { cancelAnimationFrame(RP.raf); show("summary"); };
@@ -491,18 +572,17 @@ document.addEventListener("visibilitychange", async () => {
 if ("serviceWorker" in navigator && window.isSecureContext) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
-// assessment, plan and exercise list (flow.js); first launch opens the welcome screen
+// tabs, assessment, picker (flow.js); first launch opens the welcome screen
 initFlow({
   show,
   speak,
-  // training set of any exercise of catalog.js, from the camera or from a video file
-  startTrain: (id, side, mode, file) => startSession(mode, file, id === "squat" ? { kind: "squat" }
-    : { kind: "movement", exId: id, side, purpose: "train" }),
-  startExercise: (exId, side, purpose) => startSession("camera", null, { kind: "movement", exId, side, purpose }),
+  // set of any exercise: purpose "train" or "test", from the camera or from a video file
+  startTrain: (exId, side, purpose, mode, file) => startSession(mode, file, { exId, side, purpose }),
+  startExercise: (exId, side, purpose) => startSession("camera", null, { exId, side, purpose }),
   // used by the automated tests: same as startExercise but on a video file
-  startExerciseFile: (file, exId, side, purpose) => startSession("file", file, { kind: "movement", exId, side, purpose }),
+  startExerciseFile: (file, exId, side, purpose) => startSession("file", file, { exId, side, purpose }),
 });
-if (isFirstLaunch()) show("welcome");
+show(isFirstLaunch() ? "welcome" : "home");
 
 window.__squat = S;   // for the automated tests (app/test)
 // warm up the model while the user reads the home page

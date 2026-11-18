@@ -1,5 +1,27 @@
 # Movement Coach – web app per telefono
 
+**Novità 18/11/2026: nuova struttura, analisi stile Park per tutti gli esercizi, manichino corretto ovunque.**
+- **4 schede in basso**: *Oggi* (allenamento in corso, profilo, esercizi del piano, ultimo allenamento),
+  *Allenati*, *Progressi* (storico), *Profilo* (valutazione FMS + piano di lavoro).
+- **Allenati** ha due modalità: **Esercizi** (serie libere dei 7 movimenti, linee guida di esecuzione)
+  e **Test FMS** (un test con voto 0–3 e domanda sul dolore, come nella valutazione; il voto va nei Progressi).
+  Lo **squat laterale è stato tolto**: resta il deep squat del test (con lui se n'è andata la regola IPF
+  di Necerini, che valeva solo di lato; il codice resta in `js/coach.js`).
+- **Riepilogo di ogni serie** (dai demo di J. Park, github.com/jeremyipark/vision-demos):
+  conteggio per regola ("schiena dritta 4/5"), andamento del movimento con le ripetizioni,
+  **un grafico per ogni regola** con la fascia consentita e il limite tratteggiato (nel push-up la
+  *linea del corpo*: scarto in gradi dalla retta spalla–caviglia, + anca alta / − anca bassa) e la frase
+  "quanto sei lontano dal limite", **fasi di ogni ripetizione** (discesa / fermo / risalita) con la
+  risalita più veloce e più lenta.
+- **Posizione corretta per tutti gli esercizi** (`js/correct.js`): manichino ciano con le parti sbagliate
+  spostate dove la regola le vuole (busto, ginocchia, bastone, piede, bacino, gamba, linea del corpo…),
+  nelle schede delle ripetizioni e nel replay REALE | CORRETTO al rallentatore.
+- **Più persone nell'inquadratura**: MediaPipe ne rileva fino a 3; l'app segue la più grande e centrale
+  e poi resta agganciata a lei fotogramma dopo fotogramma; le altre sono disegnate in grigio e
+  **toccandole sullo schermo** si cambia persona.
+- Test: `node test/browser_session.mjs <video> <prefisso> [esercizio]` (flusso completo in Chrome).
+  `test/browser_test.mjs` era il test dello squat laterale e non vale più.
+
 **Novità 17/11/2026 (sera): l'app non è più centrata sullo squat.**
 - Home: **Inizia allenamento**, piano di lavoro, **Storico**, valutazione iniziale (resta al primo avvio).
 - Un **allenamento** raccoglie più serie di esercizi diversi: "+ Aggiungi esercizio" → scegli

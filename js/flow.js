@@ -1,6 +1,7 @@
-// Screens and flow of the initial assessment, the results, the training plan,
-// the training session (exercise picker, guidelines, sets done so far). The camera session itself lives in main.js, which passes its
-// functions here through initFlow().
+// Screens and navigation: the four tabs (Oggi, Allenati, Progressi, Profilo),
+// the initial assessment, the exercise picker and the exercise intro. The camera
+// session and the set summary live in main.js, which passes its functions here
+// through initFlow().
 //
 // Assessment: the 7 tests in FMS order, bilateral tests once per side. For each
 // step: instructions -> camera -> score of the best repetition -> pain question.
@@ -8,12 +9,13 @@
 
 import { EXERCISES, ASSESSMENT_ORDER } from "./exercises.js";
 import { buildPlan, totalScore, saveAssessment, lastAssessment } from "./plan.js";
-import { CATALOG, GUIDES, byId, setupSteps } from "./catalog.js";
+import { CATALOG, GUIDES, TRAIN, byId, setupSteps } from "./catalog.js";
 import { openSession, startSession, endSession, loadSessions } from "./session.js";
 import { renderHistory, sessionCard } from "./history.js";
 
 const $ = (id) => document.getElementById(id);
-const SIDE_NAME = { l: "sinistra", r: "destra" };
+export const SIDE_NAME = { l: "sinistra", r: "destra" };
+const TABS = ["home", "train", "history", "profile"];
 let api = null;               // { show, speak, startExercise, startTrain }
 let A = null;                 // assessment in progress
 
@@ -29,58 +31,112 @@ export function initFlow(mainApi) {
   api = mainApi;
   const p = loadProfile();
   if (p.heightCm) $("inHeight").value = p.heightCm;
+  // tabs
+  for (const b of $("tabbar").querySelectorAll("button")) b.onclick = () => goTab(b.dataset.tab);
+  // welcome and assessment
   $("btnAssess").onclick = () => { storeWelcome(); startAssessment(); };
-  $("btnSkipAssess").onclick = () => { storeWelcome(); renderHome(); api.show("home"); };
+  $("btnSkipAssess").onclick = () => { storeWelcome(); goTab("home"); };
   $("btnNewAssess").onclick = () => api.show("welcome");
+  $("btnAssess2").onclick = () => api.show("welcome");
   $("btnTestGo").onclick = () => runStep();
   $("btnTestManual").onclick = () => { $("tiManual").hidden = false; };
   $("btnTestSkip").onclick = () => { record({ skipped: true }); nextStep(); };
-  $("btnTestQuit").onclick = () => { A = null; renderHome(); api.show("home"); };
+  $("btnTestQuit").onclick = () => { A = null; goTab("home"); };
   $("btnPainNo").onclick = () => nextStep();
   $("btnPainYes").onclick = () => { record({ pain: true }); nextStep(); };
   $("btnTestRedo").onclick = () => runStep();
-  $("btnSeePlan").onclick = () => { renderPlan(); api.show("plan"); };
-  $("btnPlan").onclick = () => { renderPlan(); api.show("plan"); };
-  for (const id of ["btnHome3", "btnHome4", "btnSessBack"]) $(id).onclick = () => { renderHome(); api.show("home"); };
-  // training session
-  $("btnSession").onclick = () => { startSession(); showSession(); };
-  $("btnAddEx").onclick = () => { renderExerciseList(); api.show("exercises"); };
-  $("btnHome5").onclick = () => (openSession() ? showSession() : (renderHome(), api.show("home")));
+  // home
+  $("btnSession").onclick = () => { startSession(); goTab("train"); };
+  $("btnAddEx").onclick = () => goTab("train");
   $("btnEndSession").onclick = () => {
     const s = endSession();
-    renderHome();
-    if (!s) { api.show("home"); return; }
+    if (!s) { goTab("home"); return; }
     api.speak("Allenamento salvato");
-    showHistory();
+    goTab("history");
   };
-  $("btnHistory").onclick = () => showHistory();
-  $("btnExBack").onclick = () => api.show(EI.back);
-  $("btnExGo").onclick = () => api.startTrain(EI.id, EI.side, "camera");
+  $("homeProfile").onclick = () => goTab("profile");
+  // picker and exercise intro
+  $("segTrain").onclick = () => { PK.mode = "train"; renderExerciseList(); };
+  $("segTest").onclick = () => { PK.mode = "test"; renderExerciseList(); };
+  $("btnExBack").onclick = () => (TABS.includes(EI.back) ? goTab(EI.back) : api.show(EI.back));
+  $("btnExGo").onclick = () => api.startTrain(EI.id, EI.side, EI.mode, "camera");
   $("btnExFile").onclick = () => $("fileInput").click();
   $("fileInput").onchange = (e) => {
     const f = e.target.files[0]; e.target.value = "";
-    if (f) api.startTrain(EI.id, EI.side, "file", f);
+    if (f) api.startTrain(EI.id, EI.side, EI.mode, "file", f);
   };
   for (const b of $("eiSide").querySelectorAll("button")) b.onclick = () => pickSide(b.dataset.side);
   renderHome();
 }
+
+// Show one of the four tabs, rendered fresh.
+export function goTab(id) {
+  if (id === "home") renderHome();
+  if (id === "train") renderExerciseList();
+  if (id === "history") renderHistory(loadSessions());
+  if (id === "profile") renderProfile();
+  api.show(id);
+}
+export const showHistory = () => goTab("history");
 
 function storeWelcome() {
   const h = Number($("inHeight").value);
   saveProfile({ ...loadProfile(), seenWelcome: true, heightCm: h >= 120 && h <= 220 ? h : undefined });
 }
 
+// ---------------------------------------------------------------- tab: Oggi
 export function renderHome() {
   const open = openSession();
-  $("btnSession").textContent = open?.sets.length ? `Riprendi allenamento (${open.sets.length} serie)` : "Inizia allenamento";
-  const last = lastAssessment();
-  $("btnPlan").hidden = !last;
-  $("homeScore").hidden = !last;
-  if (last) {
-    const d = new Date(last.date);
-    $("homeScore").innerHTML = `Ultima valutazione: <b>${last.total}</b> su ${last.max} ` +
-      `<span class="small">(${d.getDate()}/${d.getMonth() + 1})</span>`;
+  const h = new Date().getHours();
+  $("homeTitle").textContent = open?.sets.length ? "Bel lavoro, continua così"
+    : h < 12 ? "Buongiorno, si parte?" : h < 18 ? "Pronto ad allenarti?" : "Allenamento serale?";
+  // training in progress
+  $("homeOpen").hidden = !open;
+  $("btnSession").hidden = !!open;
+  if (open) {
+    const d = new Date(open.start), reps = open.sets.reduce((a, x) => a + x.reps, 0);
+    $("sessSub").textContent = `dalle ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` +
+      (open.sets.length ? ` · ${open.sets.length} serie · ${reps} rip.` : "");
+    $("sessSets").innerHTML = open.sets.length ? "" : `<p class="small">Scegli il primo esercizio: dopo ogni serie torni qui.</p>`;
+    if (open.sets.length) $("sessSets").appendChild(sessionCard(open, true));
+    $("btnEndSession").hidden = !open.sets.length;
   }
+  // movement profile
+  const last = lastAssessment();
+  $("homeProfile").innerHTML = last
+    ? `<div class="score-row"><div class="ring sm"><span>${last.total}</span><small>/${last.max}</small></div>` +
+      `<div><h2>Profilo di movimento</h2><p class="meta">${last.plan.focus.length ? `Da migliorare: ${last.plan.focus.map((id) => EXERCISES[id].name).join(", ")}` : "Nessuna area critica"}</p></div>` +
+      `<span class="go">›</span></div>`
+    : `<div class="score-row"><div class="ring sm empty"><span>?</span></div><div><h2>Valutazione iniziale</h2>` +
+      `<p class="meta">7 test, 15 minuti: scopri cosa migliorare</p></div><span class="go">›</span></div>`;
+  // today's plan: the drills that the camera can follow
+  const drills = last ? last.plan.blocks.flatMap((b) => b.drills).filter((d) => d.coach && byId(d.coach)) : [];
+  $("homePlan").hidden = !drills.length;
+  if (drills.length) {
+    $("homePlan").innerHTML = `<h2>Dal tuo piano</h2>`;
+    for (const d of drills.slice(0, 3)) $("homePlan").appendChild(drillRow(d));
+  }
+  // last finished session
+  const all = loadSessions(), ls = all[all.length - 1];
+  $("homeLast").hidden = !ls || !!open;
+  if (ls && !open) {
+    $("homeLast").innerHTML = `<h2>Ultimo allenamento</h2>`;
+    $("homeLast").appendChild(sessionCard(ls, true));
+  }
+}
+
+function drillRow(d) {
+  const row = document.createElement("div");
+  row.className = "drill";
+  row.innerHTML = `<div class="info"><div>${d.name}</div><div class="dose">${d.dose}</div><div class="desc">${d.why}</div></div>`;
+  if (d.coach && byId(d.coach)) {
+    const b = document.createElement("button");
+    b.className = "btn small";
+    b.textContent = "Con coach";
+    b.onclick = () => openExIntro(d.coach, "train", "home");
+    row.appendChild(b);
+  }
+  return row;
 }
 
 // ---------------------------------------------------------------- assessment
@@ -177,15 +233,21 @@ function finishAssessment() {
   a.plan = buildPlan(results);
   saveAssessment(a);
   A = null;
-  renderResults(a);
-  api.show("results");
+  goTab("profile");
   api.speak(`Valutazione finita. Punteggio ${a.total} su ${a.max}.`);
 }
 
-// ---------------------------------------------------------------- results and plan
-function renderResults(a) {
+// ---------------------------------------------------------------- tab: Profilo
+function renderProfile() {
+  const a = lastAssessment();
+  $("pfNone").hidden = !!a;
+  $("pfDone").hidden = !a;
+  if (!a) return;
+  const d = new Date(a.date);
   $("rsTotal").textContent = String(a.total);
   $("rsMax").textContent = `su ${a.max}`;
+  $("rsRing").style.setProperty("--p", a.max ? a.total / a.max : 0);
+  $("rsDate").textContent = `Valutazione del ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
   $("rsBars").innerHTML = ASSESSMENT_ORDER.map((id) => {
     const r = a.results[id], ex = EXERCISES[id];
     if (r.skipped) return `<div class="bar-row"><div class="name">${ex.name}<small>saltato</small></div><div class="track"></div><div class="val">–</div></div>`;
@@ -198,114 +260,72 @@ function renderResults(a) {
   const p = a.plan;
   $("rsNote").textContent = (p.pain.length ? `Dolore in: ${p.pain.join(", ")}: fatti vedere da un professionista prima di allenare quei movimenti. ` : "") +
     (p.focus.length ? `Da migliorare per primo: ${p.focus.map((id) => EXERCISES[id].name).join(", ")}.` : "Nessuna area critica.");
-}
-
-function renderPlan() {
-  const a = lastAssessment();
-  if (!a) return;
-  const p = a.plan;
   $("plSub").textContent = `${p.perWeek} sedute a settimana per ${p.weeks} settimane. In ogni seduta fai i blocchi qui sotto, in ordine.`;
   $("plBlocks").innerHTML = "";
   for (const b of p.blocks) {
     const div = document.createElement("div");
-    div.className = "block";
+    div.className = "card block";
     div.innerHTML = `<h2>${b.title}</h2><p class="why">${b.reason || "mantenimento"}</p>`;
-    for (const d of b.drills) {
-      const row = document.createElement("div");
-      row.className = "drill";
-      row.innerHTML = `<div class="info"><div>${d.name}</div><div class="dose">${d.dose}</div><div class="desc">${d.why}</div></div>`;
-      if (d.coach) row.appendChild(coachButton(d.coach));
-      div.appendChild(row);
-    }
+    for (const dr of b.drills) div.appendChild(drillRow(dr));
     $("plBlocks").appendChild(div);
   }
   $("plNote").textContent = p.note;
 }
 
-function coachButton(id) {
-  const b = document.createElement("button");
-  b.className = "btn small";
-  b.textContent = "Con coach";
-  b.onclick = () => openExIntro(id, "plan");
-  return b;
+// ---------------------------------------------------------------- tab: Allenati
+const PK = { mode: "train" };
+
+// last set of each exercise in this mode, for the badge on the right
+function lastOf(id, mode) {
+  const sets = loadSessions().flatMap((s) => s.sets).concat(openSession()?.sets || [])
+    .filter((x) => x.exId === id && (x.mode || "train") === mode);
+  return sets[sets.length - 1] || null;
 }
 
 function renderExerciseList() {
+  const test = PK.mode === "test";
+  $("segTrain").classList.toggle("on", !test);
+  $("segTest").classList.toggle("on", test);
+  $("exHint").textContent = test
+    ? "Un test alla volta, con il voto da 0 a 3 come nella valutazione. Il voto va nei Progressi."
+    : "Serie libere: la voce ti corregge, poi vedi le analisi di ogni ripetizione e la posizione corretta.";
   const list = $("exList");
   list.innerHTML = "";
-  let group = null;
-  for (const it of CATALOG) {
-    if (it.group !== group) {
-      group = it.group;
-      const h = document.createElement("h2");
-      h.className = "group";
-      h.textContent = group;
-      list.appendChild(h);
-    }
+  CATALOG.forEach((it, i) => {
+    const last = lastOf(it.id, PK.mode);
+    const badge = !last ? "" : test ? `<span class="pill s${last.best}">voto ${last.best}</span>`
+      : `<span class="pill">${last.pct}%</span>`;
     const row = document.createElement("button");
     row.className = "ex-item";
-    row.innerHTML = `<div class="info"><div>${it.name}</div><div class="meta">${it.meta}</div></div><span class="go">›</span>`;
-    row.onclick = () => openExIntro(it.id, "exercises");
+    row.innerHTML = `<span class="num">${i + 1}</span><div class="info"><div class="name">${it.name}</div>` +
+      `<div class="meta">${it.viewName}${it.bilateral ? " · per lato" : ""} · ${it.tool}</div></div>${badge}<span class="go">›</span>`;
+    row.onclick = () => openExIntro(it.id, PK.mode, "train");
     list.appendChild(row);
-  }
+  });
 }
 
 // ---------------------------------------------------------------- exercise intro
-const EI = { id: null, side: null, back: "exercises" };
+const EI = { id: null, side: null, mode: "train", back: "train" };
 
-export function openExIntro(id, back = EI.back) {
-  const it = byId(id), g = GUIDES[id];
-  EI.id = id; EI.back = back;
+export function openExIntro(id, mode = "train", back = "train") {
+  const it = byId(id), test = mode === "test", g = test ? GUIDES[id] : TRAIN[id];
+  EI.id = id; EI.mode = mode; EI.back = back;
+  $("eiMode").textContent = test ? "Test FMS · voto 0–3" : `Esercizio · consigliato ${TRAIN[id].dose}`;
   $("eiTitle").textContent = it.name;
   $("eiMeta").textContent = `Ti serve: ${it.tool}.`;
+  $("eiGuideTitle").textContent = test ? "Come si assegna il voto" : "Come si esegue";
   $("eiGuide").innerHTML = g.points.map((t) => `<li>${t}</li>`).join("");
   $("eiSource").textContent = `Fonte: ${g.source}.`;
   $("eiSetup").innerHTML = setupSteps(id).map((t) => `<li>${t}</li>`).join("");
+  $("eiChecks").textContent = `Ogni ripetizione: ${it.checks.join(", ")}. Poi i tempi di discesa e risalita, ` +
+    "i grafici della serie e la posizione corretta al rallentatore.";
   $("eiSide").hidden = !it.bilateral;
   pickSide(it.bilateral ? EI.side || "l" : null);
+  $("btnExGo").textContent = test ? "Inizia il test" : "Inizia la serie";
   api.show("exIntro");
 }
 
 function pickSide(side) {
   EI.side = side;
-  for (const b of $("eiSide").querySelectorAll("button")) b.classList.toggle("primary", b.dataset.side === side);
-}
-
-// ---------------------------------------------------------------- session and history screens
-export function showSession() {
-  const s = openSession() || startSession();
-  const d = new Date(s.start);
-  const reps = s.sets.reduce((a, x) => a + x.reps, 0);
-  $("sessSub").textContent = s.sets.length
-    ? `Iniziato alle ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} · ${s.sets.length} serie · ${reps} ripetizioni`
-    : "Scegli il primo esercizio. Dopo ogni serie torni qui e puoi farne un'altra o cambiare esercizio.";
-  $("sessSets").innerHTML = "";
-  if (s.sets.length) $("sessSets").appendChild(sessionCard(s));
-  $("btnEndSession").hidden = !s.sets.length;
-  api.show("session");
-}
-
-export function showHistory() {
-  api.show("history");
-  renderHistory(loadSessions());
-}
-
-// ---------------------------------------------------------------- summary of a training set
-export function renderMovementSummary(reps, exId) {
-  const ex = EXERCISES[exId];
-  const n = reps.length, ok = reps.filter((r) => r.ok).length;
-  $("sReps").textContent = n;
-  $("sOk").textContent = ok;
-  $("sPct").textContent = `${n ? Math.round((100 * ok) / n) : 0}%`;
-  const count = {};
-  for (const r of reps) for (const e of r.errors) count[e.kind] = (count[e.kind] || 0) + 1;
-  const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
-  const rule = top && ex.rules.find((r) => r.key === top[0]);
-  $("sMain").textContent = !n ? "Nessuna ripetizione registrata."
-    : rule ? `${ex.name}: errore più frequente in ${top[1]} ripetizioni su ${n}. ${rule.cue}.` : `${ex.name}: tutte corrette, ottimo!`;
-  $("btnWorst").hidden = true;
-  $("repList").innerHTML = reps.map((r, i) =>
-    `<div class="rep-card"><div class="info"><h3>Rip. ${i + 1}${r.side ? ` · ${SIDE_NAME[r.side]}` : ""}</h3>` +
-    (r.ok ? `<div class="okline">✓ Corretta</div>` : `<ul>${r.errors.map((e) => `<li>${e.text}</li>`).join("")}</ul>`) +
-    "</div></div>").join("");
+  for (const b of $("eiSide").querySelectorAll("button")) b.classList.toggle("on", b.dataset.side === side);
 }

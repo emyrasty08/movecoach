@@ -16,10 +16,10 @@ const LEVEL = { shoulder_mobility: 1, aslr: 1, rotary_stability: 2, trunk_pushup
                 deep_squat: 3, inline_lunge: 3, hurdle_step: 3 };
 
 // Corrective drills per test. coach = exercise id that the app can follow with
-// the camera ("squat" = the side-view squat coach), null = no camera feedback.
+// the camera (an id of exercises.js), null = no camera feedback.
 const DRILLS = {
   deep_squat: [
-    { name: "Squat al box (di lato al telefono)", dose: "3 × 8", coach: "squat", why: "profondità e busto, con correzione e manichino" },
+    { name: "Squat al box", dose: "3 × 8", coach: null, why: "profondità e busto, scendendo fino a sfiorare una panca" },
     { name: "Mobilità della caviglia al muro", dose: "2 × 10 per lato", coach: null, why: "ginocchio oltre la punta senza alzare il tallone" },
     { name: "Deep squat con bastone", dose: "3 × 5", coach: "deep_squat", why: "lo schema completo del test" },
   ],

@@ -5,8 +5,9 @@
 // saved after every set, so closing the app does not lose it.
 //
 //   session = { id, start, end, sets: [set] }
-//   set     = { exId, name, side, view, date, reps, correct, pct, errors: {kind: {n, label}},
-//               up: [s], down: [s], ipf: n | null, best: 0-3 | null }
+//   set     = { exId, name, mode: "train" | "test", side, view, date, reps, correct, pct,
+//               errors: {kind: {n, label}}, down: [s], hold: [s], up: [s],
+//               best: 0-3 (test mode) | null, pain: bool, ipf: n | null (old squat sets) }
 
 import { RULES_SIDE, RULES_FRONT } from "./coach.js";
 
@@ -57,6 +58,14 @@ export function addSet(set) {
   return s;
 }
 
+// Change the last set of the open session (pain reported after an FMS test).
+export function updateLastSet(fields) {
+  const s = openSession();
+  if (!s?.sets.length) return;
+  Object.assign(s.sets[s.sets.length - 1], fields);
+  write(OPEN, s);
+}
+
 // Close the open session: stored in the history if it has at least one set.
 export function endSession() {
   const s = openSession();
@@ -70,28 +79,28 @@ export function endSession() {
 }
 
 // ---------------------------------------------------------------- one set
-// reps: repetitions of movement.js (peak) or coach.js (b). Tempo as in the
-// rep-timing demos of J. Park: down = start -> deepest point, up = deepest point
-// -> end (the concentric phase, the one that slows down with fatigue).
-export function setRecord({ exId, name, side, view, reps }) {
+// reps: repetitions of movement.js. Tempo as in the rep-timing demos of J. Park:
+// down = start -> bottom, hold = at the bottom, up = leaving the bottom -> end
+// (the concentric phase, the one that slows down with fatigue).
+export function setRecord({ exId, name, mode, side, view, reps }) {
   const n = reps.length, ok = reps.filter((r) => r.ok).length;
   const errors = {};
   for (const r of reps) for (const e of r.errors) {
     const label = e.label || shortLabel(e);
     errors[e.kind] = { n: (errors[e.kind]?.n || 0) + 1, label };
   }
-  const bottom = (r) => r.frames[r.peak ?? r.b].t;
-  const sec = (x) => Math.round(x / 10) / 100;
+  const sec = (x) => Math.round(x * 100) / 100;
   return {
-    exId, name, side: side || null, view: view || null, date: new Date().toISOString(),
-    reps: n, correct: ok, pct: n ? Math.round((100 * ok) / n) : 0, errors,
-    down: reps.map((r) => sec(bottom(r) - r.frames[0].t)),
-    up: reps.map((r) => sec(r.frames[r.frames.length - 1].t - bottom(r))),
-    // squat seen from the side: reps below parallel by the IPF rule (coach.js, values.ipf)
-    ipf: reps.some((r) => Number.isFinite(r.values?.ipf)) ? reps.filter((r) => r.values.ipf >= 0).length : null,
-    // FMS-style score of the best repetition (movement.js)
-    best: reps.some((r) => Number.isInteger(r.score) && r.exercise) ? Math.max(...reps.map((r) => r.score)) : null,
+    exId, name, mode: mode === "test" ? "test" : "train", side: side || null, view: view || null,
+    date: new Date().toISOString(), reps: n, correct: ok, pct: n ? Math.round((100 * ok) / n) : 0, errors,
+    down: reps.map((r) => sec(r.phases.down)),
+    hold: reps.map((r) => sec(r.phases.hold)),
+    up: reps.map((r) => sec(r.phases.up)),
+    // FMS test: score of the best repetition; no valid repetition = not completed = 1
+    best: mode === "test" ? (n ? Math.max(...reps.map((r) => r.score)) : 1) : null,
+    pain: false, ipf: null,
   };
+
 }
 
 // "Busto inclinato in avanti (32°)" -> "Busto inclinato in avanti"

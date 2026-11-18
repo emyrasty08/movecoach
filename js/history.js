@@ -1,6 +1,6 @@
-// History screen: one card per training session with the exercises done in it,
-// a chart of the % of correct reps per set for one exercise at a time, and the
-// assessments.
+// "Progressi" tab: one chip per exercise (training sets and FMS tests apart),
+// its chart over time (% of correct reps per set, or the 0-3 score of the tests),
+// the assessments and one card per training session.
 
 import { historyChart } from "./charts.js";
 import { topError } from "./session.js";
@@ -8,7 +8,8 @@ import { loadAssessments } from "./plan.js";
 
 const $ = (id) => document.getElementById(id);
 const SIDE = { l: "sinistra", r: "destra" };
-let chosen = null;            // exercise shown in the chart
+let chosen = null;            // chart shown: exId, or exId + ":test" for the FMS tests
+const keyOf = (s) => (s.mode === "test" ? `${s.exId}:test` : s.exId);
 
 const fmtDate = (iso, withTime) => {
   const d = new Date(iso);
@@ -20,8 +21,9 @@ const minutes = (a, b) => Math.max(1, Math.round((new Date(b) - new Date(a)) / 6
 export function renderHistory(sessions) {
   const sets = sessions.flatMap((s) => s.sets);
   const names = new Map();
-  for (const s of sets) names.set(s.exId, s.name);
-  if (!names.has(chosen)) chosen = sets.length ? sets[sets.length - 1].exId : null;
+  for (const s of sets) names.set(keyOf(s), s.mode === "test" ? `${s.name} · test` : s.name);
+  if (!names.has(chosen)) chosen = sets.length ? keyOf(sets[sets.length - 1]) : null;
+  const isTest = chosen?.endsWith(":test");
 
   // exercise chips
   $("histFilter").innerHTML = "";
@@ -34,9 +36,15 @@ export function renderHistory(sessions) {
   }
 
   // chart and totals of the chosen exercise
-  const mine = sets.filter((s) => s.exId === chosen && s.reps);
-  $("histTitle").textContent = chosen ? `${names.get(chosen)}: ripetizioni corrette per serie` : "Ripetizioni corrette per serie";
-  historyChart($("chart"), mine.map((s) => ({
+  const mine = sets.filter((s) => keyOf(s) === chosen && (s.reps || isTest));
+  $("histTitle").textContent = !chosen ? "Ripetizioni corrette per serie"
+    : isTest ? `${names.get(chosen)}: voto FMS` : `${names.get(chosen)}: ripetizioni corrette per serie`;
+  $("histSub").textContent = isTest ? "voto 0–3 di ogni test, ultimi 20" : "percentuale sul totale della serie, ultime 20 serie";
+  if (isTest) historyChart($("chart"), mine.map((s) => ({
+    date: s.date, v: s.best,
+    tip: `<b>voto ${s.best}</b> su 3${s.pain ? " · dolore" : ""}<br>${fmtDate(s.date, true)}`,
+  })), { vmax: 3, unit: "", label: "Voto FMS di ogni test" });
+  else historyChart($("chart"), mine.map((s) => ({
     date: s.date, v: s.pct,
     tip: `<b>${s.pct}%</b> corrette · ${s.correct}/${s.reps} rip.<br>${fmtDate(s.date, true)}`,
   })), { label: "Percentuale di ripetizioni corrette per serie" });
@@ -56,26 +64,30 @@ export function renderHistory(sessions) {
 
   // sessions, newest first
   const list = $("histList");
-  list.innerHTML = sessions.length ? "<h2>Allenamenti</h2>" : `<div class="empty">Ancora nessun allenamento: premi “Inizia allenamento” nella Home.</div>`;
+  list.innerHTML = sessions.length ? "<h2>Allenamenti</h2>" : `<div class="empty">Ancora nessun allenamento: scegli un esercizio nella scheda Allenati.</div>`;
   for (const s of [...sessions].reverse()) list.appendChild(sessionCard(s));
 }
 
-export function sessionCard(s) {
+// compact: no header (the card sits inside another card of the Oggi tab)
+export function sessionCard(s, compact) {
   const card = document.createElement("div");
-  card.className = "session-card";
+  card.className = "session-card" + (compact ? " compact" : "");
   const reps = s.sets.reduce((a, x) => a + x.reps, 0);
   const exs = new Set(s.sets.map((x) => x.exId)).size;
-  card.innerHTML = `<div class="head"><b>${fmtDate(s.start, true)}</b><span class="meta">` +
+  if (!compact) card.innerHTML = `<div class="head"><b>${fmtDate(s.start, true)}</b><span class="meta">` +
     `${s.end ? `${minutes(s.start, s.end)} min · ` : ""}${exs} ${exs === 1 ? "esercizio" : "esercizi"} · ${reps} rip.</span></div>`;
   for (const x of s.sets) {
     const te = topError(x);
-    const extra = [x.best !== null && x.best !== undefined ? `voto migliore ${x.best}/3` : "",
+    const test = x.mode === "test";
+    const extra = [test ? "test FMS" : "", x.pain ? "dolore" : "",
                    x.ipf !== null && x.ipf !== undefined ? `${x.ipf}/${x.reps} sotto il parallelo` : "",
                    te ? `più frequente: ${te.label.toLowerCase()}` : ""].filter(Boolean).join(" · ");
     const row = document.createElement("div");
     row.className = "set-row";
-    row.innerHTML = `<div class="pct">${x.pct}%</div><div><div>${x.name}${x.side ? ` · ${SIDE[x.side]}` : ""}` +
+    row.innerHTML = `<div class="pct${test ? " test" : ""}">${test ? `${x.best}<small>/3</small>` : `${x.pct}%`}</div>` +
+      `<div><div>${x.name}${x.side ? ` · ${SIDE[x.side]}` : ""}` +
       ` <span class="meta">${x.correct}/${x.reps} corrette</span></div><div class="meta">${extra}</div></div>`;
+
     card.appendChild(row);
   }
   return card;

@@ -1,5 +1,5 @@
 // Generic movement analyser, streaming (one frame at a time), for every exercise
-// in exercises.js except the side-view squat, which keeps its own coach.js.
+// in exercises.js.
 //
 // Flow of one set:
 //   1. "setup": the person gets into the start position (standing, or on the
@@ -66,14 +66,16 @@ export class MovementCoach {
     }
     const inside = (p) => p.x > 0.02 * W && p.x < 0.98 * W && p.y > 0.01 * H && p.y < 0.99 * H;
     if (!need.every((n) => kp[n] && inside(kp[n]))) return "Allontanati: devo vederti tutto";
-    if (seen.length < need.length) return "Non ti vedo bene: più luce o sfondo più libero";
+    // seen from the side the far arm and leg are hidden: 3 joints out of 4 are enough
+    if (seen.length < need.length * 0.75) return "Non ti vedo bene: più luce o sfondo più libero";
     return null;
   }
 
-  // One frame. Returns an event: guide | calibrated | frame | repEnd.
+  // One frame. Returns an event: guide | calibrated | lost | frame | repEnd.
   push(raw, t, W, H) {
     const kp = this.smooth(raw);
     if (this.phase === "setup") return this.setupStep(kp, t, W, H);
+    if (this.implausible(kp)) return { type: "lost" };
     const m = this.ex.measures(kp, this.cal, this.side);
     const s = this.ex.signal(kp, this.cal, this.side);
     const frame = { t, kp: { ...kp }, m, s };
@@ -133,6 +135,17 @@ export class MovementCoach {
     return { type: "calibrated", kp };
   }
 
+  // A skeleton with a segment much longer than at the calibration is not one body:
+  // with two people overlapping (a spotter behind the lifter) MediaPipe may join the
+  // trunk of one to the legs of the other. Such frames are skipped, not measured.
+  implausible(kp) {
+    const c = this.cal, long = (a, b, len) => G.ok(kp[a]) && G.ok(kp[b]) && G.dist(kp[a], kp[b]) > 1.5 * len;
+    for (const s of ["l", "r"])
+      if (long(`hip_${s}`, `knee_${s}`, c.thigh) || long(`knee_${s}`, `ankle_${s}`, c.shin) ||
+          long(`shoulder_${s}`, `hip_${s}`, c.torso)) return true;
+    return false;
+  }
+
   // Parts to draw red right now: rules that can be checked frame by frame.
   liveBad(m) {
     const bad = new Set();
@@ -157,8 +170,21 @@ export class MovementCoach {
     }
     const score = this.ex.score(values, errors, this.cal, this.side);
     return { index: this.reps.length + 1, frames, peak, values, errors, ok: !errors.length, score,
-             side: this.side, exercise: this.ex.id };
+             side: this.side, exercise: this.ex.id, cal: this.cal, phases: phases(frames, peak) };
   }
+}
+
+// Phases of a repetition, seconds, as in J. Park's rep-timing demos: way down
+// (start -> reaching the bottom), hold at the bottom (pause, or the held pose),
+// way up (leaving the bottom -> back to the start, the concentric that slows
+// down with fatigue). "At the bottom" = signal within 10% of its peak.
+function phases(frames, peak) {
+  const top = frames[peak].s;
+  let i0 = peak, i1 = peak;
+  while (i0 > 0 && frames[i0 - 1].s >= 0.9 * top) i0--;
+  while (i1 < frames.length - 1 && frames[i1 + 1].s >= 0.9 * top) i1++;
+  const t = (i) => frames[i].t / 1000;
+  return { down: t(i0) - t(0), hold: t(i1) - t(i0), up: t(frames.length - 1) - t(i1) };
 }
 
 function fails(rule, v) {
@@ -168,7 +194,7 @@ function fails(rule, v) {
 // Reference values from the still frames (medians).
 function calibrate(frames, profile) {
   const med = (n, c) => G.median(frames.map((f) => f[n]?.[c]));
-  const P = (n) => ({ x: med(n, "x"), y: med(n, "y") });
+  const P = (n) => ({ x: med(n, "x"), y: med(n, "y"), v: med(n, "v") });
   const names = Object.keys(frames[frames.length - 1]);
   const kp = Object.fromEntries(names.map((n) => [n, P(n)]));
   const cal = { kp };

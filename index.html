@@ -16,15 +16,15 @@
 </head>
 <body>
 
-<!-- WELCOME (first launch) -->
+<!-- WELCOME (first launch, or "Rifai la valutazione") -->
 <section id="welcome" class="screen scroll">
   <div class="page">
     <img class="logo" src="icons/icon-192.png" alt="">
     <h1>Benvenuto</h1>
     <p class="lead">Prima di allenarti facciamo un controllo di come ti muovi: 7 test brevi, ripresi con la fotocamera. Alla fine ricevi un punteggio e un piano di lavoro su quello che conviene migliorare.</p>
-    <div class="tips">
+    <div class="card">
       <h2>Ti serviranno</h2>
-      <ul>
+      <ul class="plain">
         <li>circa 15 minuti e 3 m di spazio libero;</li>
         <li>un bastone (va bene un manico di scopa), un elastico o una corda da tendere all'altezza della tibia, un tappetino;</li>
         <li>un appoggio per il telefono (una sedia, dei libri).</li>
@@ -42,7 +42,7 @@
 <!-- TEST INTRO (one assessment step) -->
 <section id="testIntro" class="screen scroll">
   <div class="page">
-    <p id="tiStep" class="small"></p>
+    <p id="tiStep" class="eyebrow"></p>
     <h1 id="tiTitle"></h1>
     <p id="tiTool" class="lead"></p>
     <ol id="tiSteps" class="steps"></ol>
@@ -50,14 +50,14 @@
     <button id="btnTestManual" class="btn" hidden>Misura a mano, con un aiutante</button>
     <div id="tiManual" class="manual" hidden></div>
     <button id="btnTestSkip" class="btn">Salta questo test</button>
-    <button id="btnTestQuit" class="btn small">Interrompi la valutazione</button>
+    <button id="btnTestQuit" class="btn ghost">Interrompi la valutazione</button>
   </div>
 </section>
 
-<!-- TEST RESULT -->
+<!-- TEST RESULT (one assessment step) -->
 <section id="testResult" class="screen scroll">
   <div class="page">
-    <p id="trStep" class="small"></p>
+    <p id="trStep" class="eyebrow"></p>
     <h1 id="trTitle"></h1>
     <div class="score-big"><span id="trScore">–</span><small>su 3</small></div>
     <ul id="trFaults" class="faults"></ul>
@@ -66,44 +66,88 @@
       <button id="btnPainNo" class="btn primary">No, continua</button>
       <button id="btnPainYes" class="btn">Sì</button>
     </div>
-    <button id="btnTestRedo" class="btn small">Rifai questo test</button>
+    <button id="btnTestRedo" class="btn ghost">Rifai questo test</button>
   </div>
 </section>
 
-<!-- ASSESSMENT RESULTS -->
-<section id="results" class="screen scroll">
+<!-- TAB: OGGI -->
+<section id="home" class="screen scroll tab active">
   <div class="page">
-    <h1>Il tuo profilo di movimento</h1>
-    <div class="score-big"><span id="rsTotal">–</span><small id="rsMax">su 21</small></div>
-    <div id="rsBars" class="bars"></div>
-    <p id="rsNote" class="main-err"></p>
-    <button id="btnSeePlan" class="btn primary">Vedi il piano di lavoro</button>
-    <button id="btnHome3" class="btn">Home</button>
-  </div>
-</section>
+    <header class="top">
+      <img class="logo sm" src="icons/icon-192.png" alt="">
+      <div><p class="eyebrow">Movement Coach</p><h1 id="homeTitle">Pronto ad allenarti?</h1></div>
+    </header>
 
-<!-- PLAN -->
-<section id="plan" class="screen scroll">
-  <div class="page">
-    <div class="row head">
-      <button id="btnHome4" class="round" aria-label="Indietro">←</button>
-      <h1>Piano di lavoro</h1>
+    <div id="homeOpen" class="card hero" hidden>
+      <div class="card-head"><h2>Allenamento in corso</h2><span id="sessSub" class="meta"></span></div>
+      <div id="sessSets"></div>
+      <div class="row">
+        <button id="btnAddEx" class="btn primary">+ Esercizio</button>
+        <button id="btnEndSession" class="btn">Termina</button>
+      </div>
     </div>
-    <p id="plSub" class="lead"></p>
-    <div id="plBlocks"></div>
-    <p id="plNote" class="small"></p>
+    <button id="btnSession" class="btn primary big">Inizia allenamento</button>
+
+    <div id="homeProfile" class="card link" role="button" tabindex="0"></div>
+    <div id="homePlan" class="card" hidden></div>
+    <div id="homeLast" class="card" hidden></div>
+    <p id="modelStatus" class="status"></p>
   </div>
 </section>
 
-<!-- EXERCISE LIST -->
-<section id="exercises" class="screen scroll">
+<!-- TAB: ALLENATI (exercise picker) -->
+<section id="train" class="screen scroll tab">
   <div class="page">
-    <div class="row head">
-      <button id="btnHome5" class="round" aria-label="Indietro">←</button>
-      <h1>Scegli l'esercizio</h1>
+    <h1>Allenati</h1>
+    <div class="seg" role="tablist">
+      <button id="segTrain" class="on" role="tab">Esercizi</button>
+      <button id="segTest" role="tab">Test FMS</button>
     </div>
-    <p class="lead">La fotocamera conta le ripetizioni e la voce ti dice cosa correggere. Ogni serie finisce nell'allenamento di oggi.</p>
+    <p id="exHint" class="lead"></p>
     <div id="exList" class="ex-list"></div>
+  </div>
+</section>
+
+<!-- TAB: PROGRESSI -->
+<section id="history" class="screen scroll tab">
+  <div class="page">
+    <h1>Progressi</h1>
+    <div id="histFilter" class="chips"></div>
+    <div class="chart-card">
+      <h2 id="histTitle">Ripetizioni corrette per serie</h2>
+      <p id="histSub" class="sub">percentuale sul totale della serie, ultime 20 serie</p>
+      <div id="chart" class="chart"></div>
+    </div>
+    <div id="histStats" class="tiles"></div>
+    <p id="histTop" class="main-err"></p>
+    <div id="histAssess" class="hist-list"></div>
+    <div id="histList" class="hist-list"></div>
+    <button id="btnClear" class="btn danger ghost">Cancella storico</button>
+  </div>
+</section>
+
+<!-- TAB: PROFILO (assessment results and plan) -->
+<section id="profile" class="screen scroll tab">
+  <div class="page">
+    <h1>Profilo di movimento</h1>
+    <div id="pfNone" class="card" hidden>
+      <p class="lead">Non hai ancora fatto la valutazione iniziale: 7 test, circa 15 minuti. Ti dà un punteggio e un piano di lavoro.</p>
+      <button id="btnAssess2" class="btn primary">Fai la valutazione</button>
+    </div>
+    <div id="pfDone">
+      <div class="card">
+        <div class="score-row">
+          <div class="ring" id="rsRing"><span id="rsTotal">–</span><small id="rsMax">su 21</small></div>
+          <div><p id="rsDate" class="meta"></p><p id="rsNote" class="note"></p></div>
+        </div>
+        <div id="rsBars" class="bars"></div>
+      </div>
+      <h2 class="section">Piano di lavoro</h2>
+      <p id="plSub" class="small"></p>
+      <div id="plBlocks"></div>
+      <p id="plNote" class="small"></p>
+      <button id="btnNewAssess" class="btn">Rifai la valutazione</button>
+    </div>
   </div>
 </section>
 
@@ -112,67 +156,32 @@
   <div class="page">
     <div class="row head">
       <button id="btnExBack" class="round" aria-label="Indietro">←</button>
-      <h1 id="eiTitle"></h1>
+      <div><p id="eiMode" class="eyebrow"></p><h1 id="eiTitle"></h1></div>
     </div>
     <p id="eiMeta" class="small"></p>
-    <div class="tips">
-      <h2>Linee guida</h2>
-      <ul id="eiGuide"></ul>
+    <div class="card">
+      <h2 id="eiGuideTitle">Linee guida</h2>
+      <ul id="eiGuide" class="plain"></ul>
       <p id="eiSource" class="small source"></p>
     </div>
-    <div class="tips">
+    <div class="card">
       <h2>Dove mettere il telefono</h2>
-      <ol id="eiSetup"></ol>
+      <ol id="eiSetup" class="plain"></ol>
+    </div>
+    <div class="card">
+      <h2>Cosa analizzo</h2>
+      <p id="eiChecks" class="small"></p>
     </div>
     <div id="eiSide" class="side-pick" hidden>
-      <h2>Lato da allenare</h2>
-      <div class="row">
-        <button class="btn" data-side="l">Sinistro</button>
-        <button class="btn" data-side="r">Destro</button>
+      <h2>Lato</h2>
+      <div class="seg">
+        <button data-side="l">Sinistro</button>
+        <button data-side="r">Destro</button>
       </div>
     </div>
     <button id="btnExGo" class="btn primary">Inizia la serie</button>
     <button id="btnExFile" class="btn">Analizza un video già registrato</button>
-  </div>
-</section>
-
-<!-- TRAINING SESSION -->
-<section id="session" class="screen scroll">
-  <div class="page">
-    <div class="row head">
-      <button id="btnSessBack" class="round" aria-label="Home">←</button>
-      <h1>Allenamento</h1>
-    </div>
-    <p id="sessSub" class="lead"></p>
-    <div id="sessSets"></div>
-    <button id="btnAddEx" class="btn primary">+ Aggiungi esercizio</button>
-    <button id="btnEndSession" class="btn">Termina allenamento</button>
-  </div>
-</section>
-
-<!-- HOME -->
-<section id="home" class="screen active">
-  <div class="home-wrap">
-    <img class="logo" src="icons/icon-192.png" alt="">
-    <h1>Movement Coach</h1>
-    <p class="lead">Valuta come ti muovi, segui il tuo piano e allenati con la correzione a voce.</p>
-    <div id="homeScore" class="home-score" hidden></div>
-
-    <button id="btnSession" class="btn primary">Inizia allenamento</button>
-    <button id="btnPlan" class="btn" hidden>Il mio piano di lavoro</button>
-    <button id="btnHistory" class="btn">Storico</button>
-    <button id="btnNewAssess" class="btn">Valutazione iniziale</button>
     <input id="fileInput" type="file" accept="video/*" hidden>
-
-    <div class="tips">
-      <h2>Come funziona</h2>
-      <ol>
-        <li><b>Valutazione iniziale</b>: 7 test di movimento, un punteggio e un piano di lavoro.</li>
-        <li><b>Allenamento</b>: scegli l'esercizio, fai la serie davanti al telefono, poi il prossimo.</li>
-        <li><b>Storico</b>: ogni allenamento con tutti gli esercizi fatti, e i progressi esercizio per esercizio.</li>
-      </ol>
-    </div>
-    <p id="modelStatus" class="status"></p>
   </div>
 </section>
 
@@ -199,34 +208,39 @@
   </div>
 </section>
 
-<!-- SUMMARY -->
+<!-- SUMMARY OF A SET (or of a single FMS test) -->
 <section id="summary" class="screen scroll">
   <div class="page">
-    <h1>Riepilogo serie</h1>
+    <p id="sEyebrow" class="eyebrow"></p>
+    <h1 id="sTitle">Riepilogo serie</h1>
     <div class="tiles">
       <div class="tile"><span id="sReps">0</span><small>ripetizioni</small></div>
       <div class="tile good"><span id="sOk">0</span><small>corrette</small></div>
-      <div class="tile"><span id="sPct">0%</span><small>precisione</small></div>
+      <div class="tile"><span id="sPct">0%</span><small id="sPctLabel">precisione</small></div>
     </div>
     <p id="sMain" class="main-err"></p>
+    <button id="btnPain" class="btn ghost" hidden>Ho sentito dolore (voto 0)</button>
+    <div id="sTally" class="tally"></div>
+    <button id="btnWorst" class="btn primary" hidden>Rivedi la peggiore: tu e la posizione corretta</button>
     <div id="sCharts">
       <div class="chart-card">
         <h2>Andamento della serie</h2>
-        <p class="sub">quanto scendi nel tempo; in verde le ripetizioni corrette, in rosso quelle da correggere</p>
+        <p class="sub">quanto ti muovi nel tempo; in verde le ripetizioni corrette, in rosso quelle da correggere</p>
         <div id="sTrace" class="chart"></div>
       </div>
+      <div id="sRules"></div>
       <div class="chart-card">
-        <h2>Tempo di risalita per ripetizione</h2>
-        <p class="sub">pieno = corretta, anello = da correggere; se la risalita rallenta molto è la fatica</p>
-        <div id="sTempo" class="chart"></div>
+        <h2>Fasi di ogni ripetizione</h2>
+        <p class="sub"><span class="key k1"></span>discesa <span class="key k2"></span>fermo <span class="key k3"></span>risalita · pallino pieno = corretta, anello = da correggere</p>
+        <div id="sPhases" class="chart"></div>
         <ul id="sTempoNote" class="verdict"></ul>
       </div>
     </div>
-    <button id="btnWorst" class="btn primary" hidden>Rivedi la peggiore al rallentatore</button>
+    <h2 class="section">Ripetizioni</h2>
     <div id="repList" class="rep-list"></div>
     <div class="row">
       <button id="btnAgain" class="btn primary">Altra serie</button>
-      <button id="btnHome1" class="btn">Torna all'allenamento</button>
+      <button id="btnDone" class="btn">Fatto</button>
     </div>
   </div>
 </section>
@@ -250,26 +264,13 @@
   <p class="legend"><span class="sw g"></span>tu &nbsp; <span class="sw r"></span>sbagliato &nbsp; <span class="sw c"></span>corretto</p>
 </section>
 
-<!-- HISTORY -->
-<section id="history" class="screen scroll">
-  <div class="page">
-    <div class="row head">
-      <button id="btnHome2" class="round" aria-label="Indietro">←</button>
-      <h1>Storico</h1>
-    </div>
-    <div id="histFilter" class="chips"></div>
-    <div class="chart-card">
-      <h2 id="histTitle">Ripetizioni corrette per serie</h2>
-      <p class="sub">percentuale sul totale della serie, ultime 20 serie</p>
-      <div id="chart" class="chart"></div>
-    </div>
-    <div id="histStats" class="tiles"></div>
-    <p id="histTop" class="main-err"></p>
-    <div id="histAssess" class="hist-list"></div>
-    <div id="histList" class="hist-list"></div>
-    <button id="btnClear" class="btn danger small">Cancella storico</button>
-  </div>
-</section>
+<!-- TAB BAR -->
+<nav id="tabbar" class="tabbar">
+  <button data-tab="home"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Oggi</button>
+  <button data-tab="train"><svg viewBox="0 0 24 24"><path d="M2 10h3v4H2zM19 10h3v4h-3zM5 7h3v10H5zM16 7h3v10h-3zM8 11h8v2H8z"/></svg>Allenati</button>
+  <button data-tab="history"><svg viewBox="0 0 24 24"><path d="M4 20V10h3v10zM10.5 20V4h3v16zM17 20v-7h3v7z"/></svg>Progressi</button>
+  <button data-tab="profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg>Profilo</button>
+</nav>
 
 <script type="module" src="js/main.js"></script>
 </body>

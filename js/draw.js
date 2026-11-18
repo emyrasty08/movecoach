@@ -54,6 +54,20 @@ export function drawSkeleton(ctx, pts, edges, colorOf, lw) {
   ctx.restore();
 }
 
+// Dashed straight line a-b (the reference line of the push-up body line).
+export function drawDashed(ctx, a, b, color, lw) {
+  if (!ok(a) || !ok(b)) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.setLineDash([lw * 3, lw * 3]);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // Text with a dark outline, readable on any background.
 export function tag(ctx, text, x, y, color, size) {
   ctx.save();
@@ -165,6 +179,8 @@ export function drawMannequin(ctx, pts, view, color, alpha = 0.55) {
     c.beginPath();
     c.moveTo(shL.x, shL.y); c.lineTo(shR.x, shR.y); c.lineTo(hpR.x, hpR.y); c.lineTo(hpL.x, hpL.y);
     c.closePath(); c.fill();
+    // seen from the side the shoulders overlap: give the trunk its depth
+    if (dist(shL, shR) < 0.45 * u) capsule(c, shM, hpM, 0.5 * u, 0.45 * u);
     capsule(c, shL, hpL, 0.22 * u, 0.26 * u);
     capsule(c, shR, hpR, 0.22 * u, 0.26 * u);
     capsule(c, hpL, hpR, 0.3 * u, 0.3 * u);
