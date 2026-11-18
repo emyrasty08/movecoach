@@ -136,7 +136,7 @@ export class MovementCoach {
   }
 
   // A skeleton with a segment much longer than at the calibration is not one body:
-  // with two people overlapping (a spotter behind the lifter) MediaPipe may join the
+  // with two people overlapping (a spotter behind the lifter) the pose model may join the
   // trunk of one to the legs of the other. Such frames are skipped, not measured.
   implausible(kp) {
     const c = this.cal, long = (a, b, len) => G.ok(kp[a]) && G.ok(kp[b]) && G.dist(kp[a], kp[b]) > 1.5 * len;

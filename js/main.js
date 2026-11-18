@@ -5,31 +5,45 @@ import { byId } from "./catalog.js";
 import { MovementCoach } from "./movement.js";
 import { EXERCISES } from "./exercises.js";
 import { correctFrame, limitText } from "./correct.js";
-import { initFlow, isFirstLaunch, loadProfile, onAssessmentStep, goTab, SIDE_NAME } from "./flow.js";
+import { initFlow, isFirstLaunch, loadProfile, onAssessmentStep, goTab, storeWelcome, SIDE_NAME } from "./flow.js";
+import { createAvatar, speak as leoSpeak, setVoiceEnabled, stopSpeaking } from "./avatar.js";
+import { initTour, startTour } from "./tour.js";
 
+// Pose model: MoveNet SinglePose Thunder, the same network as the desktop analysis
+// (models/movenet_thunder.tflite, python/capture), via TensorFlow.js.
+// With ?pose=mediapipe in the address: MediaPipe Pose Landmarker (33 points, up to 3
+// people), the model used before, kept for comparison.
+const USE_MOVENET = new URLSearchParams(location.search).get("pose") !== "mediapipe";
 const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
-const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
+const MP_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
 // MediaPipe pose landmark index -> our names
 const LM = { 0: "nose", 7: "ear_l", 8: "ear_r", 11: "shoulder_l", 12: "shoulder_r", 13: "elbow_l", 14: "elbow_r",
   15: "wrist_l", 16: "wrist_r", 23: "hip_l", 24: "hip_r", 25: "knee_l", 26: "knee_r", 27: "ankle_l", 28: "ankle_r",
   29: "heel_l", 30: "heel_r", 31: "toe_l", 32: "toe_r" };
-const MAX_PEOPLE = 3;         // people detected per frame: the one training is then picked (pickPerson)
+const MAX_PEOPLE = 3;         // MediaPipe: people detected per frame, the one training is then picked (pickPerson)
+const TFJS = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
+const POSE = "https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js";
+// MoveNet (COCO 17) keypoint names -> ours. MoveNet has no heel and toe: the code that
+// uses them falls back (facing direction from the nose, mannequin foot from the ankle).
+const KP = { nose: "nose", left_ear: "ear_l", right_ear: "ear_r", left_shoulder: "shoulder_l", right_shoulder: "shoulder_r",
+  left_elbow: "elbow_l", right_elbow: "elbow_r", left_wrist: "wrist_l", right_wrist: "wrist_r", left_hip: "hip_l",
+  right_hip: "hip_r", left_knee: "knee_l", right_knee: "knee_r", left_ankle: "ankle_l", right_ankle: "ankle_r" };
 const SNAP_W = 360;           // width of the frames kept for the replay
 const TAB_SCREENS = new Set(["home", "train", "history", "profile"]);
 const $ = (id) => document.getElementById(id);
 
 const S = {
-  landmarker: null, coach: null, mode: "camera", facing: "user", stream: null, running: false,
+  detector: null, coach: null, mode: "camera", facing: "user", stream: null, running: false,
   voice: loadPref("voice", true), lastTs: -1, reps: [], worst: null, last: null,
   wakeLock: null, toastTimer: 0, snapScale: 1,
   exId: null, side: null,
   purpose: "train",           // "train" (free set), "test" (one FMS test), "assess" (step of the initial assessment)
   fatigueSaid: false,
-  mpTs: 0,                    // timestamp given to MediaPipe (see tick)
   trace: [],                  // {t, s, m} of every active frame, for the set charts
   target: null,               // {x, y, h} of the person being followed, normalized image coords
   others: [],                 // other people in the frame (drawn faint, can be tapped)
   crowdSaid: false,
+  mpTs: 0,                    // timestamp given to MediaPipe (see detect)
   rec: null,                  // set record of the last set (session.js)
 };
 
@@ -49,28 +63,10 @@ function show(id) {
   document.getElementById(id)?.scrollTo?.(0, 0);
 }
 
-// Android Chrome drops an utterance queued right after cancel(): cancel only if
-// something is playing, then speak on the next tick. Chrome also stalls the queue
-// after a while without resume(), so call it every time.
-let itVoice = null;
-function pickVoice() {
-  const vs = speechSynthesis.getVoices();
-  itVoice = vs.find((v) => /^it[-_]/i.test(v.lang)) || null;
-}
-if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
-function speak(text) {
-  if (!S.voice || !("speechSynthesis" in window)) return;
-  const busy = speechSynthesis.speaking || speechSynthesis.pending;
-  if (busy) speechSynthesis.cancel();
-  setTimeout(() => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "it-IT";
-    if (itVoice) u.voice = itVoice;
-    u.rate = 1.05;
-    speechSynthesis.resume();
-    speechSynthesis.speak(u);
-  }, busy ? 120 : 0);
-}
+// The voice is Leo's (avatar.js): whatever the app says, the avatars on screen say
+// it with their mouth. opts: { mood: "happy" | "fix", animate }
+setVoiceEnabled(S.voice);
+const speak = (text, opts) => leoSpeak(text, opts);
 
 function toast(text, good) {
   const t = $("toast");
@@ -81,16 +77,42 @@ function toast(text, good) {
   S.toastTimer = setTimeout(() => (t.hidden = true), 3200);
 }
 
+function loadScript(src) {
+  return new Promise((ok, ko) => {
+    const el = document.createElement("script");
+    el.src = src; el.crossOrigin = "anonymous";
+    el.onload = ok; el.onerror = () => ko(new Error("libreria non scaricata: " + src));
+    document.head.appendChild(el);
+  });
+}
+
 async function loadModel() {
-  if (S.landmarker) return;
-  $("modelStatus").textContent = "Carico il modello di posa… (solo la prima volta serve la rete)";
-  const { FilesetResolver, PoseLandmarker } = await import(`${MP}/vision_bundle.mjs`);
-  const fileset = await FilesetResolver.forVisionTasks(`${MP}/wasm`);
-  const opts = (delegate) => ({ baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "VIDEO",
-                                numPoses: MAX_PEOPLE, minPoseDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-  try { S.landmarker = await PoseLandmarker.createFromOptions(fileset, opts("GPU")); }
-  catch { S.landmarker = await PoseLandmarker.createFromOptions(fileset, opts("CPU")); }
-  $("modelStatus").textContent = "";
+  if (S.detector) return;
+  if (S.loading) return S.loading;
+  S.loading = (async () => {
+    $("modelStatus").textContent = `Carico il modello di posa ${USE_MOVENET ? "MoveNet" : "MediaPipe"}… (solo la prima volta serve la rete)`;
+    if (!USE_MOVENET) {
+      const { FilesetResolver, PoseLandmarker } = await import(`${MP}/vision_bundle.mjs`);
+      const fileset = await FilesetResolver.forVisionTasks(`${MP}/wasm`);
+      const opts = (delegate) => ({ baseOptions: { modelAssetPath: MP_MODEL, delegate }, runningMode: "VIDEO",
+                                    numPoses: MAX_PEOPLE, minPoseDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+      let lmk;
+      try { lmk = await PoseLandmarker.createFromOptions(fileset, opts("GPU")); }
+      catch { lmk = await PoseLandmarker.createFromOptions(fileset, opts("CPU")); }
+      S.detector = { mediapipe: lmk };
+      $("modelStatus").textContent = "";
+      return;
+    }
+    if (!window.tf) await loadScript(TFJS);
+    if (!window.poseDetection) await loadScript(POSE);
+    try { await tf.setBackend("webgl"); } catch { await tf.setBackend("cpu"); }
+    await tf.ready();
+    const pd = window.poseDetection;
+    S.detector = await pd.createDetector(pd.SupportedModels.MoveNet,
+      { modelType: pd.movenet.modelType.SINGLEPOSE_THUNDER, enableSmoothing: false });
+    $("modelStatus").textContent = "";
+  })();
+  try { await S.loading; } finally { S.loading = null; }
 }
 
 // ---------------------------------------------------------------- session
@@ -135,6 +157,7 @@ async function startSession(mode, file, opts) {
     return;
   }
   try { S.wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+  S.detector.reset?.();                    // MoveNet keeps a crop from the last frames: new set, new crop
   S.running = true;
   schedule();
 }
@@ -156,7 +179,7 @@ function stopSession() {
   S.stream = null;
   $("video").pause();
   S.wakeLock?.release?.().catch(() => {});
-  speechSynthesis?.cancel?.();
+  stopSpeaking();
   const last = S.coach.finish?.();          // a repetition still in progress
   if (last) addRep(last, false);
   if (S.purpose === "assess") { onAssessmentStep(S.reps); return; }
@@ -173,7 +196,7 @@ async function stepFile() {
   for (let t = 0; S.running && t < v.duration; t += dt) {
     v.currentTime = t;
     await new Promise((r) => (v.onseeked = r));
-    tick();
+    await tick();
     $("guideBar").parentElement.dataset.p = String(t / v.duration);
   }
   stopSession();
@@ -183,8 +206,9 @@ function schedule() {
   const v = $("video");
   if (!S.running) return;
   if (S.mode === "file") { stepFile(); return; }
-  if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => { tick(); schedule(); });
-  else requestAnimationFrame(() => { tick(); schedule(); });
+  const next = () => tick().catch((e) => console.error(e)).then(schedule);
+  if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(next);
+  else requestAnimationFrame(next);
 }
 
 function setGuide(text, prog) {
@@ -195,26 +219,26 @@ function setGuide(text, prog) {
 }
 
 // ---------------------------------------------------------------- which person
-// MediaPipe returns up to MAX_PEOPLE poses in no fixed order. With a second person
-// in the frame (a spotter, someone walking by) the app must keep following the one
-// training: once chosen, the person nearest to where they were in the last frame
-// (same size too) is kept. The first choice is the biggest and most central one,
-// and a tap on the screen chooses another.
-function personBox(lm, mirror) {
-  const xs = lm.map((p) => (mirror ? 1 - p.x : p.x)), ys = lm.map((p) => p.y);
-  const hip = { x: (xs[23] + xs[24]) / 2, y: (ys[23] + ys[24]) / 2 };
-  const sh = { x: (xs[11] + xs[12]) / 2, y: (ys[11] + ys[12]) / 2 };
-  return { x: (hip.x + sh.x) / 2, y: (hip.y + sh.y) / 2, h: Math.max(...ys) - Math.min(...ys) };
+// The detector returns a list of poses ({name: {x, y, v}}, normalized coords). MoveNet
+// Thunder finds one person, but the selection is kept general: with more poses the
+// app follows the one training (nearest to where they were, same size), the first
+// choice is the biggest and most central one, and a tap chooses another.
+function personBox(lm) {
+  const pts = Object.values(lm).filter((p) => p.v >= 0.3);
+  const ys = pts.map((p) => p.y);
+  const mid = (a, b) => ({ x: (lm[a].x + lm[b].x) / 2, y: (lm[a].y + lm[b].y) / 2 });
+  const hip = mid("hip_l", "hip_r"), sh = mid("shoulder_l", "shoulder_r");
+  return { x: (hip.x + sh.x) / 2, y: (hip.y + sh.y) / 2, h: ys.length ? Math.max(...ys) - Math.min(...ys) : 0 };
 }
 
-function pickPerson(all, mirror) {
+function pickPerson(all) {
   if (!all?.length) return null;
-  const boxes = all.map((lm) => personBox(lm, mirror));
+  const boxes = all.map((lm) => personBox(lm));
   let best = 0;
   if (S.target) {
     const cost = (b) => Math.hypot(b.x - S.target.x, b.y - S.target.y) + 0.5 * Math.abs(b.h - S.target.h);
     boxes.forEach((b, i) => { if (cost(b) < cost(boxes[best])) best = i; });
-    // lost (the person left, or MediaPipe swapped): keep the target until they come back
+    // lost (the person left, or the detector swapped): keep the target until they come back
     if (cost(boxes[best]) > 0.35) { S.others = all; return null; }
   } else {
     const score = (b) => b.h * (1 - Math.abs(b.x - 0.5));
@@ -233,8 +257,7 @@ function pickPerson(all, mirror) {
 function onStageTap(ev) {
   const cv = $("stage"), r = cv.getBoundingClientRect();
   const tap = { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height };
-  const mirror = S.mode === "camera" && S.facing === "user";
-  const cands = S.others.map((lm) => personBox(lm, mirror));
+  const cands = S.others.map((lm) => personBox(lm));
   if (!cands.length) return;
   let b = 0;
   cands.forEach((c, i) => { if (Math.hypot(c.x - tap.x, c.y - tap.y) < Math.hypot(cands[b].x - tap.x, cands[b].y - tap.y)) b = i; });
@@ -247,32 +270,62 @@ function onStageTap(ev) {
 }
 
 // ---------------------------------------------------------------- per frame
-function tick() {
+// MoveNet keypoints in pixels of the video -> {name: {x, y, v}} normalized and,
+// for the front camera, mirrored like the image on screen.
+function toPose(p, W, H, mirror) {
+  const out = {};
+  for (const k of p.keypoints) {
+    const n = KP[k.name];
+    // MoveNet scores are lower than MediaPipe visibilities, on which the 0.5 thresholds of
+    // movement.js were set: same rescale as the replay tests on the MoveNet CSVs (test/replay_*.mjs)
+    if (n) out[n] = { x: mirror ? 1 - k.x / W : k.x / W, y: k.y / H, v: Math.min(1, 1.6 * (k.score ?? 0)) };
+  }
+  return out;
+}
+
+// All the people seen in the frame, as {name: {x, y, v}} normalized.
+async function detect(v, W, H, mirror, ts) {
+  if (S.detector.mediapipe) {
+    // MediaPipe needs increasing timestamps over its whole life, also across sets
+    // (a video file restarts from 0): it gets its own clock, advanced by the frame time
+    S.mpTs += S.lastPoseTs === undefined || ts <= S.lastPoseTs ? 33 : ts - S.lastPoseTs;
+    S.lastPoseTs = ts;
+    const res = S.detector.mediapipe.detectForVideo(v, S.mpTs);
+    return (res.landmarks || []).map((l) => {
+      const out = {};
+      for (const [i, n] of Object.entries(LM)) {
+        const p = l[i];
+        out[n] = { x: mirror ? 1 - p.x : p.x, y: p.y, v: p.visibility ?? 1 };
+      }
+      return out;
+    });
+  }
+  const poses = await S.detector.estimatePoses(v, { flipHorizontal: false });
+  return poses.filter((p) => (p.score ?? 1) > 0.2).map((p) => toPose(p, W, H, mirror));
+}
+
+async function tick() {
   const v = $("video");
-  if (v.readyState < 2 || !S.landmarker) return;
+  if (v.readyState < 2 || !S.detector) return;
   const W = v.videoWidth, H = v.videoHeight;
   const cv = $("stage"), ctx = cv.getContext("2d");
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   const mirror = S.mode === "camera" && S.facing === "user";
+
+  let ts = S.mode === "file" ? v.currentTime * 1000 : performance.now();
+  if (ts <= S.lastTs) ts = S.lastTs + 1;
+  S.lastTs = ts;
+  const poses = await detect(v, W, H, mirror, ts);
+  if (!S.running) return;
+  // draw the frame after the estimate: the image and the skeleton are the same instant
   ctx.save();
   if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
   ctx.drawImage(v, 0, 0, W, H);
   ctx.restore();
-
-  let ts = S.mode === "file" ? v.currentTime * 1000 : performance.now();
-  if (ts <= S.lastTs) ts = S.lastTs + 1;
-  // MediaPipe needs increasing timestamps over its whole life, also across sets
-  // (a video file restarts from 0): it gets its own clock, advanced by the frame time
-  S.mpTs += S.lastTs < 0 ? 33 : ts - S.lastTs;
-  S.lastTs = ts;
-  const res = S.landmarker.detectForVideo(v, S.mpTs);
-  const lm = pickPerson(res.landmarks, mirror);
+  const lm = pickPerson(poses);
   const toKp = (l) => {
     const kp = {};
-    for (const [i, n] of Object.entries(LM)) {
-      const p = l[i];
-      kp[n] = { x: (mirror ? 1 - p.x : p.x) * W, y: p.y * H, v: p.visibility ?? 1 };
-    }
+    for (const [n, p] of Object.entries(l)) kp[n] = { x: p.x * W, y: p.y * H, v: p.v };
     return kp;
   };
   const lw = Math.max(3, W / 220);
@@ -303,7 +356,7 @@ function tick() {
     setGuide("", 0);
     $("viewBadge").textContent = ex.name + (S.side ? ` · ${SIDE_NAME[S.side]}` : "");
     $("viewBadge").hidden = false;
-    speak("Pronto. Inizia quando vuoi");
+    speak("Pronto. Inizia quando vuoi", { mood: "happy" });
     toast("Pronto!", true);
     return;
   }
@@ -323,8 +376,8 @@ function addRep(rep, say) {
   $("okCount").textContent = String(S.reps.filter((r) => r.ok).length);
   const n = S.reps.length;
   if (say) {
-    if (rep.ok) { toast(`Rip. ${n}: bene!`, true); speak(`${n}. Bene`); }
-    else { toast(`Rip. ${n}: ${rep.errors[0].text}`, false); speak(`${n}. ${rep.errors[0].cue}`); }
+    if (rep.ok) { toast(`Rip. ${n}: bene!`, true); speak(`${n}. Bene`, { mood: "happy" }); }
+    else { toast(`Rip. ${n}: ${rep.errors[0].text}`, false); speak(`${n}. ${rep.errors[0].cue}`, { mood: "fix" }); }
     checkFatigue(S.reps.map((r) => r.phases.up));
   }
   // keep the images only of the worst and of the last rep: memory
@@ -392,6 +445,8 @@ function renderSummary() {
   $("btnWorst").hidden = !(S.worst && hasReplay(S.worst));
   $("sCharts").hidden = !n;
   show("summary");
+  // Leo reads the verdict of the set
+  speak($("sMain").textContent, { mood: n && ok === n ? "happy" : n ? "fix" : "", animate: true });
   if (n) {
     const span = (r) => ({ t0: r.frames[0].t, t1: r.frames[r.frames.length - 1].t });
     setTraceChart($("sTrace"), S.trace, reps.map((r) => ({ ...span(r), ok: r.ok })));
@@ -526,7 +581,7 @@ $("btnVoice").textContent = S.voice ? "🔊" : "🔇";
 $("btnVoice").onclick = () => {
   S.voice = !S.voice; savePref("voice", S.voice);
   $("btnVoice").textContent = S.voice ? "🔊" : "🔇";
-  if (!S.voice) speechSynthesis?.cancel?.();
+  setVoiceEnabled(S.voice);
 };
 $("btnFlip").onclick = async () => {
   S.facing = S.facing === "user" ? "environment" : "user";
@@ -539,7 +594,8 @@ $("btnFlip").onclick = async () => {
 };
 $("btnWorst").onclick = () => S.worst && openReplay(S.worst);
 $("btnAgain").onclick = () => startSession("camera", null, { exId: S.exId, side: S.side, purpose: S.purpose });
-$("btnDone").onclick = () => goTab("home");
+$("btnDone").onclick = () => { stopSpeaking(); goTab("home"); };
+$("sumAvatar").onclick = () => speak($("sMain").textContent, { animate: true });
 $("btnPain").onclick = () => {
   SES.updateLastSet({ best: 0, pain: true });
   S.rec.best = 0;
@@ -582,7 +638,26 @@ initFlow({
   // used by the automated tests: same as startExercise but on a video file
   startExerciseFile: (file, exId, side, purpose) => startSession("file", file, { exId, side, purpose }),
 });
-show(isFirstLaunch() ? "welcome" : "home");
+// Leo: on the welcome page, in the corner of the live image, next to the verdict of a set.
+// (The home one is created in flow.js, the tour one in tour.js.)
+createAvatar($("welcomeAvatar"), { wave: true });
+createAvatar($("liveAvatar"));
+createAvatar($("sumAvatar"));
+initTour({ goTab });
+// "Fai la valutazione" -> welcome; "Più tardi" -> home, no welcome next time; "Salta" -> as before the tour
+const afterTour = (how) => {
+  if (how === "next") show("welcome");
+  else if (how === "alt") { storeWelcome(); goTab("home"); }
+  else if (isFirstLaunch()) show("welcome");
+  else goTab("home");
+};
+$("btnTour").onclick = () => startTour(afterTour);
+// first launch: Leo shows the app, then the initial assessment (or later)
+if (isFirstLaunch() && !loadPref("toured", false)) {
+  savePref("toured", true);
+  goTab("home");
+  startTour(afterTour);
+} else show(isFirstLaunch() ? "welcome" : "home");
 
 window.__squat = S;   // for the automated tests (app/test)
 // warm up the model while the user reads the home page

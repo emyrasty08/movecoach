@@ -18,6 +18,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* .btn, .card... set display: hidden must still win */
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
 h1 { font-size: 1.7rem; margin: 0.15em 0 0.5em; letter-spacing: -0.01em; }
@@ -255,3 +256,58 @@ ul.plain li, ol.plain li { margin: 6px 0; }
 .drill .dose { color: var(--accent); font-weight: 700; font-size: 0.88rem; }
 .drill .desc { color: var(--text-2); font-size: 0.84rem; }
 .manual { background: var(--surface); border-radius: var(--radius); padding: 4px 14px 8px; margin: 6px 0; }
+
+/* ---------------------------------------------------------------- Leo, the coach avatar */
+.avatar { display: block; flex: none; padding: 0; border: 0; background: none; }
+.avatar .leo { display: block; width: 100%; height: 100%; overflow: hidden; }
+.avatar.lg { width: 132px; height: 139px; }
+.avatar.md { width: 104px; height: 109px; }
+.avatar.sm { width: 64px; height: 67px; }
+#welcomeAvatar { margin: 4px 0 6px; }
+.leo-eyes { transform-box: fill-box; transform-origin: center; animation: leo-blink 4.6s infinite; }
+.leo-body { animation: leo-breathe 3.6s ease-in-out infinite; transform-origin: 100px 210px; }
+@keyframes leo-blink { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+@keyframes leo-breathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.015); } }
+@media (prefers-reduced-motion: reduce) { .leo-eyes, .leo-body { animation: none; } }
+
+.bubble { position: relative; background: var(--surface-2); border: 1px solid var(--line); border-radius: 16px;
+  padding: 12px 14px; color: var(--text); margin: 0; }
+.bubble p { margin: 0; }
+.coach-card { display: flex; gap: 10px; align-items: flex-end; margin: 6px 0 16px; }
+.coach-card .bubble { flex: 1; min-width: 0; border-bottom-left-radius: 4px; }
+.linkish { border: 0; background: none; color: var(--accent); font-weight: 650; padding: 8px 0 0; font-size: 0.92rem; }
+.coach-line { display: flex; gap: 10px; align-items: flex-end; margin: 14px 0 6px; }
+.coach-line .bubble { flex: 1; min-width: 0; border-bottom-left-radius: 4px; color: var(--text-2); }
+.coach-line .bubble:empty { display: none; }
+
+/* live: Leo's head in the corner, talks with the cues */
+.avatar.live { position: absolute; right: 8px; bottom: calc(150px + env(safe-area-inset-bottom)); width: 78px; height: 82px;
+  pointer-events: none; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5)); }
+
+/* tour */
+.tour { position: fixed; inset: 0; z-index: 50; }
+.tour[hidden] { display: none; }
+.tour.dim { background: rgba(5, 6, 8, 0.78); }
+.tour-spot { position: fixed; border-radius: 18px; box-shadow: 0 0 0 200vmax rgba(5, 6, 8, 0.78);
+  outline: 2px solid var(--accent); outline-offset: 2px; transition: all 0.3s ease; pointer-events: none; }
+.tour-box { position: fixed; left: 16px; right: 16px; max-width: 560px; margin: 0 auto; display: flex; gap: 8px;
+  align-items: flex-end; }
+.tour-box.center { top: 50%; transform: translateY(-50%); flex-direction: column; align-items: center; text-align: center; }
+.tour-box.top { top: max(16px, env(safe-area-inset-top)); }
+.tour-box.bottom { bottom: calc(16px + env(safe-area-inset-bottom)); }
+.tour-box .bubble { flex: 1; min-width: 0; width: 100%; font-size: 1.02rem; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
+.tour-box:not(.center) .avatar.lg { width: 96px; height: 101px; }
+.tour-box:not(.center) .bubble { border-bottom-left-radius: 4px; }
+.tour-btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 12px; }
+.tour-box.center .tour-btns { justify-content: center; }
+.tour-btns .btn.small { width: auto; }
+.dots { display: flex; gap: 6px; margin-top: 10px; }
+.tour-box.center .dots { justify-content: center; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.dots i.on { background: var(--accent); }
+
+/* opened as a file: explain how to open it */
+.file-warn { position: fixed; left: 16px; right: 16px; bottom: calc(var(--nav-h) + 16px); z-index: 60; max-width: 560px;
+  margin: 0 auto; background: #3a1414; border: 1px solid var(--bad); border-radius: var(--radius); padding: 14px 16px; }
+.file-warn[hidden] { display: none; }
+.file-warn p { margin: 6px 0 0; color: var(--text-2); }

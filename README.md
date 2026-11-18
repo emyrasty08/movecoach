@@ -1,5 +1,26 @@
 # Movement Coach – web app per telefono
 
+**Novità 18/11/2026 (pomeriggio): coach Leo, MoveNet al posto di MediaPipe, correzioni.**
+- **Leo, il personal trainer a cartone** (`js/avatar.js`, SVG disegnato nel codice): parla con la voce
+  dell'app e **muove la bocca** in base al testo (una forma di bocca per lettera: "a" aperta, "o/u"
+  tonde, "m/b/p" chiuse…), risincronizzata sulle parole quando la voce manda gli eventi `boundary`
+  (iOS, Chrome desktop); senza eventi (molte voci Android) la bocca segue la durata stimata.
+  Sbatte le palpebre, saluta con la mano, alza le sopracciglia quando la ripetizione è buona e le
+  aggrotta quando c'è da correggere. È nella home (consiglio del giorno), nel benvenuto, nell'angolo
+  dell'immagine durante la serie (dice le correzioni) e nel riepilogo (legge il verdetto).
+- **Giro dell'app con Leo** (`js/tour.js`) al primo avvio, poi la valutazione iniziale;
+  si rivede da Profilo → "Rivedi il giro dell'app con Leo".
+- **Modello di posa: MoveNet SinglePose Thunder** (TensorFlow.js), lo stesso della parte desktop
+  (`models/movenet_thunder.tflite`). 17 punti COCO: niente tallone e punta (la direzione nel deep
+  squat laterale si ricava dal naso, il piede del manichino dalla caviglia). I punteggi MoveNet sono
+  riscalati ×1,6 come nei test `test/replay_*.mjs`. Thunder vede **una persona**: il tocco per
+  cambiare persona resta nel codice ma non serve più. Il modello di prima resta per confronto aprendo l'app con
+  `?pose=mediapipe` in fondo all'indirizzo.
+- Bug: `.btn { display: block }` vinceva sull'attributo `hidden`, quindi bottoni da nascondere
+  (es. "Inizia allenamento" con un allenamento già aperto) restavano visibili sovrapposti.
+- Aperta con doppio clic su `index.html` (`file://`) l'app non funziona (il browser blocca i moduli
+  JS): ora compare un avviso. Sul PC usare **`avvia-app.bat`** (server locale su localhost:8000).
+
 **Novità 18/11/2026: nuova struttura, analisi stile Park per tutti gli esercizi, manichino corretto ovunque.**
 - **4 schede in basso**: *Oggi* (allenamento in corso, profilo, esercizi del piano, ultimo allenamento),
   *Allenati*, *Progressi* (storico), *Profilo* (valutazione FMS + piano di lavoro).

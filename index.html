@@ -19,7 +19,7 @@
 <!-- WELCOME (first launch, or "Rifai la valutazione") -->
 <section id="welcome" class="screen scroll">
   <div class="page">
-    <img class="logo" src="icons/icon-192.png" alt="">
+    <div id="welcomeAvatar" class="avatar lg"></div>
     <h1>Benvenuto</h1>
     <p class="lead">Prima di allenarti facciamo un controllo di come ti muovi: 7 test brevi, ripresi con la fotocamera. Alla fine ricevi un punteggio e un piano di lavoro su quello che conviene migliorare.</p>
     <div class="card">
@@ -77,6 +77,14 @@
       <img class="logo sm" src="icons/icon-192.png" alt="">
       <div><p class="eyebrow">Movement Coach</p><h1 id="homeTitle">Pronto ad allenarti?</h1></div>
     </header>
+
+    <div class="coach-card">
+      <button id="homeAvatar" class="avatar md" aria-label="Fai parlare Leo"></button>
+      <div class="bubble">
+        <p id="coachSays"></p>
+        <button id="btnCoachSay" class="linkish">🔊 Ascolta Leo</button>
+      </div>
+    </div>
 
     <div id="homeOpen" class="card hero" hidden>
       <div class="card-head"><h2>Allenamento in corso</h2><span id="sessSub" class="meta"></span></div>
@@ -148,6 +156,7 @@
       <p id="plNote" class="small"></p>
       <button id="btnNewAssess" class="btn">Rifai la valutazione</button>
     </div>
+    <button id="btnTour" class="btn ghost">Rivedi il giro dell'app con Leo</button>
   </div>
 </section>
 
@@ -201,6 +210,7 @@
     <div class="bar"><div id="guideBar"></div></div>
   </div>
   <div id="toast" class="toast" hidden></div>
+  <div id="liveAvatar" class="avatar live" aria-hidden="true"></div>
   <div class="hud-bottom">
     <button id="btnVoice" class="round" aria-label="Voce">🔊</button>
     <button id="btnStop" class="btn stop">Fine serie</button>
@@ -218,7 +228,10 @@
       <div class="tile good"><span id="sOk">0</span><small>corrette</small></div>
       <div class="tile"><span id="sPct">0%</span><small id="sPctLabel">precisione</small></div>
     </div>
-    <p id="sMain" class="main-err"></p>
+    <div class="coach-line">
+      <button id="sumAvatar" class="avatar sm" aria-label="Fai parlare Leo"></button>
+      <p id="sMain" class="bubble main-err"></p>
+    </div>
     <button id="btnPain" class="btn ghost" hidden>Ho sentito dolore (voto 0)</button>
     <div id="sTally" class="tally"></div>
     <button id="btnWorst" class="btn primary" hidden>Rivedi la peggiore: tu e la posizione corretta</button>
@@ -272,6 +285,33 @@
   <button data-tab="profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg>Profilo</button>
 </nav>
 
+<!-- TOUR with Leo -->
+<div id="tour" class="tour" hidden>
+  <div id="tourSpot" class="tour-spot" hidden></div>
+  <div id="tourBox" class="tour-box center">
+    <button id="tourAvatar" class="avatar lg" aria-label="Ripeti"></button>
+    <div class="bubble">
+      <p id="tourText"></p>
+      <div id="tourDots" class="dots"></div>
+      <div class="tour-btns">
+        <button id="tourSkip" class="btn ghost small">Salta</button>
+        <button id="tourAlt" class="btn small" hidden></button>
+        <button id="tourNext" class="btn primary small">Avanti</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Opened by double click (file://): the browser blocks the app's modules, so
+     no button would work. Say how to open it instead. -->
+<div id="fileWarn" class="file-warn" hidden>
+  <h2>L'app va aperta da un indirizzo web</h2>
+  <p>Aprendo <b>index.html</b> con un doppio clic il browser blocca il codice dell'app e i tasti non funzionano.</p>
+  <p>Sul telefono: <b>emyrasty08.github.io/movecoach</b>. Sul PC: doppio clic su <b>avvia-app.bat</b> (nella cartella app), poi si apre da solo.</p>
+</div>
+<script>
+  if (location.protocol === "file:") document.getElementById("fileWarn").hidden = false;
+</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

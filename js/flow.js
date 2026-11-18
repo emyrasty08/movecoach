@@ -12,6 +12,7 @@ import { buildPlan, totalScore, saveAssessment, lastAssessment } from "./plan.js
 import { CATALOG, GUIDES, TRAIN, byId, setupSteps } from "./catalog.js";
 import { openSession, startSession, endSession, loadSessions } from "./session.js";
 import { renderHistory, sessionCard } from "./history.js";
+import { createAvatar } from "./avatar.js";
 
 const $ = (id) => document.getElementById(id);
 export const SIDE_NAME = { l: "sinistra", r: "destra" };
@@ -55,6 +56,11 @@ export function initFlow(mainApi) {
     goTab("history");
   };
   $("homeProfile").onclick = () => goTab("profile");
+  // Leo on the home page: tap him (or "Ascolta") to hear the advice of the day
+  createAvatar($("homeAvatar"), { wave: true });
+  const say = () => api.speak($("coachSays").textContent, { animate: true });
+  $("homeAvatar").onclick = say;
+  $("btnCoachSay").onclick = say;
   // picker and exercise intro
   $("segTrain").onclick = () => { PK.mode = "train"; renderExerciseList(); };
   $("segTest").onclick = () => { PK.mode = "test"; renderExerciseList(); };
@@ -79,7 +85,7 @@ export function goTab(id) {
 }
 export const showHistory = () => goTab("history");
 
-function storeWelcome() {
+export function storeWelcome() {
   const h = Number($("inHeight").value);
   saveProfile({ ...loadProfile(), seenWelcome: true, heightCm: h >= 120 && h <= 220 ? h : undefined });
 }
@@ -103,6 +109,7 @@ export function renderHome() {
   }
   // movement profile
   const last = lastAssessment();
+  $("coachSays").textContent = coachAdvice(open, last);
   $("homeProfile").innerHTML = last
     ? `<div class="score-row"><div class="ring sm"><span>${last.total}</span><small>/${last.max}</small></div>` +
       `<div><h2>Profilo di movimento</h2><p class="meta">${last.plan.focus.length ? `Da migliorare: ${last.plan.focus.map((id) => EXERCISES[id].name).join(", ")}` : "Nessuna area critica"}</p></div>` +
@@ -123,6 +130,24 @@ export function renderHome() {
     $("homeLast").innerHTML = `<h2>Ultimo allenamento</h2>`;
     $("homeLast").appendChild(sessionCard(ls, true));
   }
+}
+
+// What Leo says on the home page: the next useful thing to do.
+function coachAdvice(open, last) {
+  const all = loadSessions(), ls = all[all.length - 1];
+  if (open?.sets.length) {
+    const s = open.sets[open.sets.length - 1];
+    return `Ultima serie: ${s.name}, ${s.reps} ripetizioni. Aggiungi un altro esercizio o termina quando hai finito.`;
+  }
+  if (open) return "Allenamento aperto: scegli il primo esercizio, poi mettiti davanti al telefono.";
+  if (!last) return "Ciao! Prima di tutto facciamo la valutazione: sette test brevi, così so su cosa lavorare con te.";
+  if (last.plan.focus.length)
+    return `Oggi lavoriamo su ${last.plan.focus.map((id) => EXERCISES[id].name).join(" e ")}. Trovi gli esercizi qui sotto, nel tuo piano.`;
+  if (ls) {
+    const reps = ls.sets.reduce((a, x) => a + x.reps, 0);
+    return `L'ultima volta hai fatto ${ls.sets.length} serie e ${reps} ripetizioni. Si riparte?`;
+  }
+  return "Il tuo profilo è buono: scegli un esercizio e io ti seguo serie dopo serie.";
 }
 
 function drillRow(d) {
