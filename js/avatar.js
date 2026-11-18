@@ -148,12 +148,35 @@ export function removeAvatar(a) { avatars.delete(a); }
 // something is playing, then speak on the next tick. Chrome also stalls the queue
 // after a while without resume(), so call it every time.
 const V = { enabled: true, voice: null, cur: null, raf: 0, last: 0 };
+// The app has no voice of its own: it uses the Italian voices of the phone, and the
+// default one is often a female, low quality one. Leo is a man: male voices first,
+// then the better quality ones ("Enhanced", "Premium", "Natural"/"Neural" voices).
+// The person can choose another one in Profilo (setVoiceName).
+const MALE = /luca|cosimo|diego|giuseppe|benigno|calimero|roberto|giorgio|federico|riccardo|male|maschil|it-it-x-it[cd]|#male/i;
+const FEMALE = /female|femmin|alice|federica|paola|elsa|isabella|carla|silvia|giulia|chiara|emma|it-it-x-it[ab]|google italiano/i;
+const GOOD = /enhanced|premium|natural|neural|online|avanzat|migliorat|network/i;
+export function voiceScore(v) {
+  return (MALE.test(v.name) || MALE.test(v.voiceURI || "") ? 10 : 0) - (FEMALE.test(v.name) ? 10 : 0) +
+         (GOOD.test(v.name) || GOOD.test(v.voiceURI || "") ? 4 : 0) + (/^it[-_]it/i.test(v.lang) ? 1 : 0);
+}
+export function italianVoices() {
+  if (!("speechSynthesis" in window)) return [];
+  return speechSynthesis.getVoices().filter((v) => /^it[-_]/i.test(v.lang)).sort((a, b) => voiceScore(b) - voiceScore(a));
+}
 function pickVoice() {
-  const vs = speechSynthesis.getVoices().filter((v) => /^it[-_]/i.test(v.lang));
-  // Leo has a male voice when the phone has one (iOS "Luca", Windows "Cosimo", Google "it-it-x-itd")
-  V.voice = vs.find((v) => /luca|cosimo|diego|paolo|male|itd|itc/i.test(v.name) && !/female/i.test(v.name)) || vs[0] || null;
+  const vs = italianVoices();
+  V.voice = (V.wanted && vs.find((v) => v.voiceURI === V.wanted)) || vs[0] || null;
+  V.onVoices?.();
 }
 if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+
+// uri of the voice chosen in Profilo ("" = automatic); onVoices: the list changed
+export function setVoiceName(uri, onVoices) {
+  V.wanted = uri || "";
+  if (onVoices) V.onVoices = onVoices;
+  if ("speechSynthesis" in window) pickVoice();
+}
+export const currentVoice = () => V.voice;
 
 export function setVoiceEnabled(on) {
   V.enabled = on;
@@ -177,6 +200,8 @@ export function speak(text, opts = {}) {
     u.lang = "it-IT";
     if (V.voice) u.voice = V.voice;
     u.rate = 1.05;
+    // a female voice (no male one on the phone): a bit lower, less out of character
+    u.pitch = V.voice && voiceScore(V.voice) < 0 ? 0.85 : 1;
     if (talk) {
       u.onstart = () => beginMouth(talk);
       u.onboundary = (e) => {

@@ -40,6 +40,7 @@ export function initTour(api) {
 export function startTour(onDone) {
   T.onDone = onDone;
   $("tour").hidden = false;
+  document.body.classList.add("touring");
   go(0);
 }
 
@@ -78,6 +79,7 @@ function place() {
 function finish(how) {
   stopSpeaking();
   $("tour").hidden = true;
+  document.body.classList.remove("touring");
   const cb = T.onDone;
   T.onDone = null;
   cb?.(how);

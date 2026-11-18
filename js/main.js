@@ -6,7 +6,7 @@ import { MovementCoach } from "./movement.js";
 import { EXERCISES } from "./exercises.js";
 import { correctFrame, limitText } from "./correct.js";
 import { initFlow, isFirstLaunch, loadProfile, onAssessmentStep, goTab, storeWelcome, SIDE_NAME } from "./flow.js";
-import { createAvatar, speak as leoSpeak, setVoiceEnabled, stopSpeaking } from "./avatar.js";
+import { createAvatar, speak as leoSpeak, setVoiceEnabled, stopSpeaking, setVoiceName, italianVoices, currentVoice, voiceScore } from "./avatar.js";
 import { initTour, startTour } from "./tour.js";
 
 // Pose model: MoveNet SinglePose Thunder, the same network as the desktop analysis
@@ -652,6 +652,20 @@ const afterTour = (how) => {
   else goTab("home");
 };
 $("btnTour").onclick = () => startTour(afterTour);
+// Leo's voice: automatic (best male Italian voice of the phone) or chosen here
+function renderVoices() {
+  const vs = italianVoices(), sel = $("voicePick"), want = loadPref("voiceUri", "");
+  sel.innerHTML = `<option value="">Automatica${currentVoice() && !want ? ` (${currentVoice().name})` : ""}</option>` +
+    vs.map((v) => `<option value="${v.voiceURI.replace(/"/g, "&quot;")}">${v.name}${voiceScore(v) >= 10 ? " · maschile" : ""}</option>`).join("");
+  sel.value = want;
+  const male = vs.some((v) => voiceScore(v) >= 10);
+  $("voiceHint").textContent = !vs.length ? "Nessuna voce italiana sul telefono: installane una nelle impostazioni di sintesi vocale."
+    : male ? "" : "Sul telefono non c'è una voce italiana maschile. iPhone: Impostazioni › Accessibilità › Contenuto letto ad alta voce › Voci › Italiano › scarica «Luca (Migliorata)». Android: Impostazioni › Sintesi vocale › Google › Italiano › scegli una voce maschile e scaricala. Poi riapri l'app.";
+}
+setVoiceName(loadPref("voiceUri", ""), renderVoices);
+renderVoices();
+$("voicePick").onchange = (e) => { savePref("voiceUri", e.target.value); setVoiceName(e.target.value); renderVoices(); };
+$("btnVoiceTest").onclick = () => speak("Ciao, sono Leo. Ti seguo in ogni ripetizione: schiena dritta e scendi piano.", { animate: true });
 // first launch: Leo shows the app, then the initial assessment (or later)
 if (isFirstLaunch() && !loadPref("toured", false)) {
   savePref("toured", true);
